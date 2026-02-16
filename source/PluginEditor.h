@@ -1,9 +1,11 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "SpriteData.h"   // Include our database
+#include "SpriteWindow.h" // Include our window
 
-class SquabDanceAudioProcessorEditor : public juce::AudioProcessorEditor, 
-                                       public juce::Timer 
+class SquabDanceAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                       public juce::Timer
 {
 public:
     SquabDanceAudioProcessorEditor (SquabDanceAudioProcessor&);
@@ -15,17 +17,21 @@ public:
 
 private:
     SquabDanceAudioProcessor& audioProcessor;
-    juce::Image spriteSheet;
     
-    // Animation State
-    int currentFrameIndex = 0;
+    // Database
+    std::vector<CharacterDef> characterDB;
     
-    // Sprite Sheet Constants
-    const int frameWidth = 220;
-    const int frameHeight = 256;
-    const int totalCols = 8;
-    const int totalRows = 10;
+    // UI Elements
+    juce::ComboBox categoryBox;
+    juce::ComboBox animationBox;
+    juce::Label catLabel;
+    juce::Label animLabel;
     
+    // The Floating Window
+    std::unique_ptr<SpriteWindow> spriteWindow;
+    
+    // Helper to load images
+    void loadCharacterImage(int index);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SquabDanceAudioProcessorEditor)
-  
 };
