@@ -44,5 +44,26 @@ target_link_libraries(SquabDance
     juce::juce_recommended_config_flags
 )
 
-# 5. Generate Header
+# . EMBED ASSETS (Add all your PNGs here)
+juce_add_binary_data(SquabAssets
+    SOURCES
+        "Assets/Cat.png"
+        "Assets/Dog.png"
+        "Assets/Frog.png"
+        "Assets/Other Animals.png"
+        "Assets/Nyan Cat.png"
+        "Assets/Link.png"
+        "Assets/Video Game.png"
+        "Assets/Twice.png"
+        "Assets/Anime.png"
+        "Assets/Anime 2.png"
+        "Assets/Fruity Chan.png"
+        "Assets/Cars.png"
+        "Assets/Other Dance.png"
+)
+
+# 6. Link the Assets to your Plugin
+target_link_libraries(SquabDance PRIVATE SquabAssets)
+
+# 7. Generate Header (Must be last)
 juce_generate_juce_header(SquabDance)

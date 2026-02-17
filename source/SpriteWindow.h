@@ -1,11 +1,13 @@
 #pragma once
 #include <JuceHeader.h>
 
-// This component lives INSIDE the transparent window
 class SpriteContent : public juce::Component, public juce::Timer
 {
 public:
-    SpriteContent() { startTimerHz(12); }
+    SpriteContent() { 
+        setSize(220, 256); // Force exact size
+        startTimerHz(30); 
+    }
     ~SpriteContent() { stopTimer(); }
 
     void setSpeed(float hz) {
@@ -13,15 +15,15 @@ public:
         if (std::abs(getTimerInterval() - (1000.0/hz)) > 1.0) startTimerHz((int)hz);
     }
 
-    void setImage(juce::Image img) { spriteSheet = img; repaint(); }
+    void setImage(juce::Image img) { 
+        spriteSheet = img; 
+        repaint(); 
+    }
     
-    // Updates parameters from the Editor
-    void updateParams(int row, int frames, bool mir, float x, float y) {
+    void updateParams(int row, int frames, bool mir) {
         currentRow = row;
         totalFrames = frames;
         mirror = mir;
-        xOffset = x;
-        yOffset = y;
         repaint();
     }
 
@@ -33,73 +35,76 @@ public:
     }
 
     void paint(juce::Graphics& g) override {
-        // No fillAll() -> This keeps it transparent!
-        
-        if (spriteSheet.isValid()) {
-            int frameWidth = 220; 
-            int frameHeight = 256;
-            
-            // Calculate offsets to center in the window
-            int destX = (getWidth() - frameWidth)/2 + (int)xOffset;
-            int destY = (getHeight() - frameHeight)/2 + (int)yOffset;
+        // --- DEBUG: RED BORDER (To verify window position) ---
+        g.setColour(juce::Colours::red);
+        //g.drawRect(getLocalBounds(), 4);
 
-            int srcX = currentFrame * frameWidth;
-            int srcY = currentRow * frameHeight;
-
-            g.drawImage(spriteSheet, destX, destY, frameWidth, frameHeight, srcX, srcY, frameWidth, frameHeight);
-
-            if (mirror) {
-                int mirrorY = destY + frameHeight;
-                g.saveState();
-                g.addTransform(juce::AffineTransform::verticalFlip((float)(mirrorY + frameHeight/2)));
-                
-                juce::ColourGradient gradient (juce::Colours::white.withAlpha(0.6f), 0, (float)mirrorY,
-                                               juce::Colours::transparentWhite, 0, (float)mirrorY + frameHeight, false);
-                g.setGradientFill(gradient);
-                g.drawImage(spriteSheet, destX, mirrorY, frameWidth, frameHeight, srcX, srcY, frameWidth, frameHeight);
-                g.restoreState();
-            }
+        if (!spriteSheet.isValid()) {
+            g.drawText("NO IMAGE", getLocalBounds(), juce::Justification::centred);
+            return;
         }
+
+        // ANIMATION LOGIC
+        int rowToDraw = isMouseOverOrDragging ? 9 : currentRow;
+        int framesToDraw = isMouseOverOrDragging ? 8 : totalFrames; 
+
+        int srcX = (currentFrame % framesToDraw) * 220;
+        int srcY = rowToDraw * 256;
+
+        // --- POSITION FIX ---
+        // Adjust this if feet are cut off
+        int yNudge = -28; 
+
+        g.drawImage(spriteSheet, 
+                    0, yNudge, 220, 256,   // Destination 
+                    srcX, srcY, 220, 256); // Source
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override {
+        isMouseOverOrDragging = true;
+        if (auto* win = findParentComponentOfClass<juce::DocumentWindow>())
+            dragger.startDraggingComponent (win, e);
+        repaint();
+    }
+    void mouseDrag (const juce::MouseEvent& e) override {
+        if (auto* win = findParentComponentOfClass<juce::DocumentWindow>())
+            dragger.dragComponent (win, e, nullptr);
+    }
+    void mouseUp (const juce::MouseEvent& e) override {
+        isMouseOverOrDragging = false;
+        repaint();
     }
 
 private:
     juce::Image spriteSheet;
+    juce::ComponentDragger dragger;
+    bool isMouseOverOrDragging = false;
     int currentFrame = 0;
     int totalFrames = 8; 
     int currentRow = 0;
     bool mirror = false;
-    float xOffset = 0;
-    float yOffset = 0;
 };
 
-// The Actual Floating Window Class
 class SpriteWindow : public juce::DocumentWindow
 {
 public:
     SpriteWindow(const juce::String& name)
-        : DocumentWindow(name, juce::Colours::transparentBlack, DocumentWindow::allButtons)
+        : DocumentWindow(name, juce::Colours::transparentBlack, 0) 
     {
-        setUsingNativeTitleBar(true); // Standard window frame
-        setResizable(true, true);
-        setAlwaysOnTop(true);         // Float above everything
-        
-        content = std::make_unique<SpriteContent>();
-        setContentOwned(content.get(), true);
-        
-        // Make the background transparent
-        setBackgroundColour(juce::Colours::transparentBlack);
+        setUsingNativeTitleBar(false); 
+        setResizable(false, false);
+        setAlwaysOnTop(true);
         setOpaque(false);
-        
-        centreWithSize(400, 600);
+        setBackgroundColour(juce::Colours::transparentBlack);
+        setDropShadowEnabled(false); 
+
+        content = std::make_unique<SpriteContent>();
+        setContentNonOwned(content.get(), true);
+        centreWithSize(220, 256);
         setVisible(true);
     }
     
-    // Pass commands down to the content
     SpriteContent* getContent() { return content.get(); }
-
-    void closeButtonPressed() override { 
-        setVisible(false); // Just hide, don't destroy
-    }
 
 private:
     std::unique_ptr<SpriteContent> content;
