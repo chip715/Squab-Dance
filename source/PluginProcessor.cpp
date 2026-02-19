@@ -26,7 +26,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
     layout.add(std::make_unique<juce::AudioParameterInt>("style", "Animation Style", 0, 9, 0));
 
     // 3. Speed (HZ) - Range 1Hz to 30Hz, default 12Hz
-    layout.add(std::make_unique<juce::AudioParameterFloat>("speed", "Speed (Hz)", 1.0f, 30.0f, 12.0f));
+   layout.add(std::make_unique<juce::AudioParameterFloat>(
+    "speed", 
+    "Speed", 
+    juce::NormalisableRange<float>(1.0f, 30.0f, 1.0f), // The 3rd argument (1.0f) is the step size!
+    30.0f  // Default value
+));
 
     // 4. X and Y Offsets (Keep these for positioning)
     layout.add(std::make_unique<juce::AudioParameterFloat>("xoffset", "X Offset", -500.0f, 500.0f, 0.0f));

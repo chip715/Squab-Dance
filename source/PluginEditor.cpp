@@ -7,7 +7,6 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     setSize (300, 300); 
     characterDB = SpriteDatabase::getDatabase();
 
-    // UI SETUP
     addAndMakeVisible(catLabel); catLabel.setText("Category", juce::dontSendNotification);
     addAndMakeVisible(categoryBox);
     int id = 1;
@@ -31,23 +30,25 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     addAndMakeVisible(speedSlider);
     speedSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     speedSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+    speedSlider.setNumDecimalPlacesToDisplay(0); // Hides the ".0"
     speedAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "speed", speedSlider);
 
     addAndMakeVisible(mirrorButton);
     mirrorButton.setButtonText("Mirror Reflection");
     mirrorAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "mirror", mirrorButton);
 
-    // Create Window
     spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
     
     categoryBox.setSelectedId(11); 
     startTimerHz(30); 
 }
 
-SquabDanceAudioProcessorEditor::~SquabDanceAudioProcessorEditor() { stopTimer(); spriteWindow = nullptr; }
+SquabDanceAudioProcessorEditor::~SquabDanceAudioProcessorEditor() { 
+    stopTimer(); 
+    spriteWindow = nullptr; 
+}
 
-void SquabDanceAudioProcessorEditor::loadCharacterImage(int index)
-{
+void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
     if (spriteWindow == nullptr) return;
 
     juce::String filename = characterDB[index].filename;
@@ -56,7 +57,6 @@ void SquabDanceAudioProcessorEditor::loadCharacterImage(int index)
     int imageSize = 0;
     const char* imageData = nullptr;
 
-    // Scan ALL resources to find a match
     for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
         juce::String res = BinaryData::namedResourceList[i];
         if (res.replace("_", "").toLowerCase() == cleanTarget) {
@@ -77,10 +77,13 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
         float speed = *audioProcessor.apvts.getRawParameterValue("speed");
         bool mir = *audioProcessor.apvts.getRawParameterValue("mirror") > 0.5f;
         int style = animationBox.getSelectedId() - 1; 
+        
         int catIdx = categoryBox.getSelectedId() - 1;
         int frames = 8;
-        if (catIdx >= 0 && catIdx < (int)characterDB.size() && style >= 0 && style < (int)characterDB[catIdx].anims.size())
+
+        if (catIdx >= 0 && catIdx < (int)characterDB.size() && style >= 0 && style < (int)characterDB[catIdx].anims.size()) {
             frames = characterDB[catIdx].anims[style].frameCount;
+        }
 
         spriteWindow->getContent()->setSpeed(speed);
         spriteWindow->getContent()->updateParams(style, frames, mir); 

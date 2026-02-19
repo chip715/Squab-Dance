@@ -5,10 +5,10 @@ class SpriteContent : public juce::Component, public juce::Timer
 {
 public:
     SpriteContent() { 
-        setSize(220, 256); // Force exact size
+        setSize(220, 256); 
         startTimerHz(30); 
     }
-    ~SpriteContent() { stopTimer(); }
+    ~SpriteContent() override { stopTimer(); }
 
     void setSpeed(float hz) {
         if (hz < 1.0f) hz = 1.0f;
@@ -33,33 +33,41 @@ public:
             repaint();
         }
     }
+void paint(juce::Graphics& g) override {
+        // 1. WIPE THE CANVAS CLEAN
+        g.fillAll(juce::Colours::transparentBlack);
 
-    void paint(juce::Graphics& g) override {
-        // --- DEBUG: RED BORDER (To verify window position) ---
-        g.setColour(juce::Colours::red);
-        //g.drawRect(getLocalBounds(), 4);
+        if (!spriteSheet.isValid()) return;
 
-        if (!spriteSheet.isValid()) {
-            g.drawText("NO IMAGE", getLocalBounds(), juce::Justification::centred);
-            return;
-        }
-
-        // ANIMATION LOGIC
+        // 2. ANIMATION MATH
         int rowToDraw = isMouseOverOrDragging ? 9 : currentRow;
         int framesToDraw = isMouseOverOrDragging ? 8 : totalFrames; 
+        if (framesToDraw <= 0) framesToDraw = 1; 
 
         int srcX = (currentFrame % framesToDraw) * 220;
         int srcY = rowToDraw * 256;
 
-        // --- POSITION FIX ---
-        // Adjust this if feet are cut off
-        int yNudge = -28; 
+        // --- THE Y-NUDGE ---
+        // Pulls the sprite up to bypass the invisible OS window border.
+        // If her feet are still slightly cut off, change this to -25 or -30.
+        int yNudge = -21; 
 
+        g.saveState();
+        
+        // 3. MIRROR REFLECTION
+        if (mirror) {
+            juce::AffineTransform flip = juce::AffineTransform::scale(-1.0f, 1.0f).translated(220.0f, 0.0f);
+            g.addTransform(flip);
+        }
+
+        // 4. DRAW FULL OPACITY
+        g.setOpacity(1.0f); 
         g.drawImage(spriteSheet, 
-                    0, yNudge, 220, 256,   // Destination 
-                    srcX, srcY, 220, 256); // Source
+                    0, yNudge, 220, 256,   // Destination (Screen)
+                    srcX, srcY, 220, 256); // Source (Spritesheet)
+                    
+        g.restoreState();
     }
-
     void mouseDown (const juce::MouseEvent& e) override {
         isMouseOverOrDragging = true;
         if (auto* win = findParentComponentOfClass<juce::DocumentWindow>())
@@ -99,10 +107,13 @@ public:
         setDropShadowEnabled(false); 
 
         content = std::make_unique<SpriteContent>();
+        
         setContentNonOwned(content.get(), true);
         centreWithSize(220, 256);
         setVisible(true);
     }
+    
+    void closeButtonPressed() override { setVisible(false); }
     
     SpriteContent* getContent() { return content.get(); }
 
