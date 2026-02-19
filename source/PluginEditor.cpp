@@ -1,13 +1,46 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+const int DEFAULT_CHARACTER_INDEX = 11; 
+
 SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (300, 300); 
+    setSize (420, 240); 
     characterDB = SpriteDatabase::getDatabase();
 
+    // 1. TITLE & BRANDING
+    addAndMakeVisible(titleLabel);
+    titleLabel.setText("Squab Dance", juce::dontSendNotification);
+    titleLabel.setFont(juce::Font(24.0f, juce::Font::plain));
+    titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+
+    addAndMakeVisible(squabDadLabel);
+    squabDadLabel.setText("by Squab Dad", juce::dontSendNotification);
+    squabDadLabel.setFont(juce::Font(12.0f, juce::Font::plain));
+    squabDadLabel.setColour(juce::Label::textColourId, juce::Colours::black);
+
+
+// 2. LOAD BIRD LOGO (Updated for Squab_Logo.png)
+    addAndMakeVisible(birdLogo);
+    birdLogo.setImagePlacement(juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
+    
+    for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
+        juce::String res = BinaryData::namedResourceList[i];
+        // Strip all underscores and spaces so "Squab_Logo.png" becomes "squablogopng"
+        juce::String cleanRes = res.replace(" ", "").replace("_", "").toLowerCase();
+        
+        if (cleanRes.contains("squablogo")) {
+            int size = 0;
+            const char* data = BinaryData::getNamedResource(res.toUTF8(), size);
+            birdLogo.setImage(juce::ImageCache::getFromMemory(data, size));
+            break;
+        }
+    }
+
+    // 3. DROPDOWNS
     addAndMakeVisible(catLabel); catLabel.setText("Category", juce::dontSendNotification);
+    catLabel.setColour(juce::Label::textColourId, juce::Colours::darkgrey.darker());
     addAndMakeVisible(categoryBox);
     int id = 1;
     for (auto& charDef : characterDB) categoryBox.addItem(charDef.categoryName, id++);
@@ -23,23 +56,67 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
         }
     };
 
-    addAndMakeVisible(animLabel); animLabel.setText("Animation", juce::dontSendNotification);
+    addAndMakeVisible(animLabel); animLabel.setText("Dance Move", juce::dontSendNotification);
+    animLabel.setColour(juce::Label::textColourId, juce::Colours::darkgrey.darker());
     addAndMakeVisible(animationBox);
 
-    addAndMakeVisible(speedLabel); speedLabel.setText("Speed (Hz)", juce::dontSendNotification);
+    // 4. RATE KNOB
+    addAndMakeVisible(speedLabel); 
+    speedLabel.setText("Rate", juce::dontSendNotification);
+    speedLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    speedLabel.setJustificationType(juce::Justification::centred);
+    
     addAndMakeVisible(speedSlider);
     speedSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     speedSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
-    speedSlider.setNumDecimalPlacesToDisplay(0); // Hides the ".0"
-    speedAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "speed", speedSlider);
+    speedSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
+    speedSlider.setNumDecimalPlacesToDisplay(1);
+    speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "speed", speedSlider);
 
+    // 5. BUTTONS
     addAndMakeVisible(mirrorButton);
-    mirrorButton.setButtonText("Mirror Reflection");
-    mirrorAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "mirror", mirrorButton);
+    mirrorButton.setClickingTogglesState(true);
+    mirrorButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF1E1E1E)); 
+    mirrorButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    mirrorButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFFBB03B)); 
+    mirrorButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+    mirrorAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "mirror", mirrorButton);
 
+    addAndMakeVisible(hzButton); hzButton.setButtonText("Hz");
+    hzButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFFFBB03B));
+    hzButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+    
+    addAndMakeVisible(syncButton); syncButton.setButtonText(juce::CharPointer_UTF8("\xe2\x99\xaa"));
+    syncButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF666666)); 
+    syncButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+
+    // --- THE OPEN/CLOSED TOGGLE FIX ---
+    addAndMakeVisible(openButton); 
+    openButton.setClickingTogglesState(true);
+    openButton.setButtonText("Closed"); // Default state
+    openButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF222222)); // OFF state (Dark)
+    openButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    openButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFFBB03B)); // ON state (Yellow)
+    openButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+    
+    // Dynamic Text Swapper
+    openButton.onClick = [this] {
+        openButton.setButtonText(openButton.getToggleState() ? "Open" : "Closed");
+    };
+    
+    addAndMakeVisible(resetButton); resetButton.setButtonText("Reset");
+    resetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF222222)); 
+    resetButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+
+    // 6. WINDOW INIT
     spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
     
-    categoryBox.setSelectedId(11); 
+    if (DEFAULT_CHARACTER_INDEX <= characterDB.size()) {
+        categoryBox.setSelectedId(DEFAULT_CHARACTER_INDEX); 
+    } else {
+        categoryBox.setSelectedId(1);
+    }
+    
     startTimerHz(30); 
 }
 
@@ -50,7 +127,6 @@ SquabDanceAudioProcessorEditor::~SquabDanceAudioProcessorEditor() {
 
 void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
     if (spriteWindow == nullptr) return;
-
     juce::String filename = characterDB[index].filename;
     juce::String cleanTarget = filename.replace(" ", "").replace(".", "").replace("_", "").toLowerCase();
     
@@ -67,8 +143,6 @@ void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
 
     if (imageData != nullptr) {
         spriteWindow->getContent()->setImage(juce::ImageCache::getFromMemory(imageData, imageSize));
-    } else {
-        DBG("FAIL: Could not load " + filename);
     }
 }
 
@@ -78,6 +152,9 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
         bool mir = *audioProcessor.apvts.getRawParameterValue("mirror") > 0.5f;
         int style = animationBox.getSelectedId() - 1; 
         
+        // --- UPDATE TOGGLE TEXT DYNAMICALLY ---
+        mirrorButton.setButtonText(mir ? "Reflection" : "No Reflection");
+
         int catIdx = categoryBox.getSelectedId() - 1;
         int frames = 8;
 
@@ -90,15 +167,37 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
     }
 }
 
-void SquabDanceAudioProcessorEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colours::darkgrey); }
+void SquabDanceAudioProcessorEditor::paint (juce::Graphics& g) { 
+    g.fillAll (juce::Colour(0xFF424242)); // Match Mockup Background Grey
+}
 
 void SquabDanceAudioProcessorEditor::resized() {
-    int margin = 20;
-    catLabel.setBounds(margin, 20, 100, 20);
-    categoryBox.setBounds(margin, 40, getWidth()-(margin*2), 30);
-    animLabel.setBounds(margin, 80, 100, 20);
-    animationBox.setBounds(margin, 100, getWidth()-(margin*2), 30);
-    speedLabel.setBounds(margin, 150, 100, 20);
-    speedSlider.setBounds(margin, 170, 100, 100);
-    mirrorButton.setBounds(150, 200, 140, 30);
+    // Left Column
+    titleLabel.setBounds(20, 15, 200, 30);
+    birdLogo.setBounds(10, 50, 200, 110);
+    mirrorButton.setBounds(20, 180, 180, 25);
+
+    // Right Column
+    int rightCol = 230;
+    catLabel.setBounds(rightCol, 15, 100, 20);
+    categoryBox.setBounds(rightCol, 35, 160, 22);
+
+    animLabel.setBounds(rightCol, 65, 100, 20);
+    animationBox.setBounds(rightCol, 85, 160, 22);
+
+    // Rate Controls (Made Slider 25% larger and shifted everything right)
+    speedLabel.setBounds(rightCol, 120, 75, 20); 
+    speedSlider.setBounds(rightCol, 140, 75, 75); 
+
+    // Sub Buttons Grid (Shifted Right to fit bigger slider)
+    int btnX = rightCol + 85;
+    int btnY = 145;
+    hzButton.setBounds(btnX, btnY, 35, 20);
+    openButton.setBounds(btnX + 40, btnY, 50, 20);
+    
+    syncButton.setBounds(btnX, btnY + 25, 35, 20);
+    resetButton.setBounds(btnX + 40, btnY + 25, 50, 20);
+
+    // Footer
+    squabDadLabel.setBounds(btnX, 205, 100, 20);
 }
