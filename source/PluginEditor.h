@@ -45,8 +45,18 @@ private:
 
     std::vector<CharacterDef> characterDB;
     std::unique_ptr<SpriteWindow> spriteWindow;
-
+    
+    void preCacheImages();
     void loadCharacterImage(int index);
+    bool isSyncMode = false; 
+    void triggerBackgroundLoad(int index);
+    std::vector<juce::Image> cachedSprites;
+
+    struct ResourcePointer {
+    const char* data = nullptr;
+    int size = 0;
+};
+std::vector<ResourcePointer> resourceCache;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SquabDanceAudioProcessorEditor)
 };

@@ -25,31 +25,39 @@ public:
         repaint(); 
     }
     
-    void updateParams(int row, int frames, bool mir) {
+    void updateParams(int row, int frames, int hRow, int hFrames, bool mir) {
         currentRow = row;
         totalFrames = frames;
+        heldRow = hRow;       
+        heldFrames = hFrames; 
         mirror = mir;
         repaint();
     }
 
+    void resetAnimation() {
+        currentFrame = 0;            
+        startTimerHz(currentHz);     
+        repaint();
+    }
+
     void timerCallback() override {
-        if (totalFrames > 0) {
-            currentFrame = (currentFrame + 1) % totalFrames;
+        int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames;
+        if (activeFrames > 0) {
+            currentFrame = (currentFrame + 1) % activeFrames;
             repaint();
         }
     }
 
- void paint(juce::Graphics& g) override {
-        // Clear the main window
+    void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colours::transparentBlack);
 
         if (!spriteSheet.isValid()) return;
 
-        int rowToDraw = isMouseOverOrDragging ? 9 : currentRow;
-        int framesToDraw = isMouseOverOrDragging ? 8 : totalFrames; 
-        if (framesToDraw <= 0) framesToDraw = 1; 
+        int rowToDraw = isMouseOverOrDragging ? heldRow : currentRow;
+        int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames; 
+        if (activeFrames <= 0) activeFrames = 1; 
 
-        int srcX = (currentFrame % framesToDraw) * 220;
+        int srcX = (currentFrame % activeFrames) * 220;
         int srcY = rowToDraw * 256;
         int yNudge = -20; 
 
@@ -57,21 +65,16 @@ public:
         g.setOpacity(1.0f); 
         g.drawImage(spriteSheet, 0, yNudge, 220, 256, srcX, srcY, 220, 256); 
                     
-        // 2. PERFECT FLIP & FADE (Zero Lag, Fixed Ghosting)
+        // 2. PERFECT FLIP & FADE (Zero Lag)
         if (mirror) {
-            
-            // A. HARD ERASE THE MEMORY BUFFERS
-            // This instantly fixes the glitching/duplication!
             frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
             reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
 
-            // B. Snapshot current frame
             {
                 juce::Graphics gFrame(frameBuffer);
                 gFrame.drawImage(spriteSheet, 0, 0, 220, 256, srcX, srcY, 220, 256);
             } 
 
-            // C. Manually read upside down and apply the fade
             {
                 juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
                 juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
@@ -80,9 +83,7 @@ public:
 
                 for (int y = 0; y < 256; ++y) {
                     if (y >= fadeEnd) break; 
-
                     int flippedY = 255 - y; 
-
                     float progress = (float)y / (float)fadeEnd;
                     float curve = (1.0f - progress) * (1.0f - progress); 
                     float alphaMod = 0.45f * curve; 
@@ -95,8 +96,6 @@ public:
                     }
                 }
             }
-
-            // D. STAMP IT ON SCREEN
             g.drawImageAt(reflectionBuffer, 0, yNudge + 256);
         }
     }
@@ -126,6 +125,8 @@ private:
     int currentFrame = 0;
     int totalFrames = 8; 
     int currentRow = 0;
+    int heldRow = 9;
+    int heldFrames = 8;
     bool mirror = false;
 };
 
@@ -136,6 +137,7 @@ public:
         : DocumentWindow(name, juce::Colours::transparentBlack, 0) 
     {
         setUsingNativeTitleBar(false); 
+        setTitleBarHeight(0);
         setResizable(false, false);
         setAlwaysOnTop(true);
         setOpaque(false);
@@ -143,7 +145,6 @@ public:
         setDropShadowEnabled(false); 
 
         content = std::make_unique<SpriteContent>();
-        
         setContentNonOwned(content.get(), true);
         centreWithSize(220, 512); 
         setVisible(true);

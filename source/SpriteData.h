@@ -7,8 +7,8 @@ struct AnimationDef {
 };
 
 struct CharacterDef {
-    juce::String categoryName;     // e.g., "Cat"
-    juce::String filename;         // e.g., "Cat.png"
+    juce::String categoryName;
+    juce::String filename; 
     std::vector<AnimationDef> anims;
 };
 
@@ -19,9 +19,11 @@ public:
     {
         std::vector<CharacterDef> db;
 
-        // --- Helper to make adding easier ---
         auto addChar = [&](juce::String name, juce::String file) {
-            CharacterDef c; c.categoryName = name; c.filename = file; return c;
+            CharacterDef c; 
+            c.categoryName = name; 
+            c.filename = file; 
+            return c;
         };
 
         // 1. CAT
@@ -36,7 +38,7 @@ public:
         auto dog = addChar("Dog", "Dog.png");
         dog.anims = {
             {"6O163", 4}, {"Doge Turntable", 10}, {"Doge 2", 10}, {"Pug PUGS!!!", 12}, {"Dug Twerk", 65},
-            {"Party Dog", 63}, {"Spin", 112}, {"Row 7", 100}, {"Row 8", 90}, {"Row 9", 16} // Added generic names for missing ones
+            {"Party Dog", 63}, {"Spin", 112}, {"Row 7", 100}, {"Row 8", 90}, {"Row 9", 16}
         };
         db.push_back(dog);
 
@@ -112,7 +114,7 @@ public:
         };
         db.push_back(fruity);
         
-        // 12. CARS (You provided data but no names, so using placeholders)
+        // 12. CARS 
         auto cars = addChar("Cars", "Cars.png");
         cars.anims = {
             {"Car 1", 53}, {"Car 2", 53}, {"Car 3", 53}, {"Car 4", 136}, {"Car 5", 51},
