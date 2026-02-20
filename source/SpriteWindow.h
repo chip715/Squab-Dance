@@ -5,7 +5,9 @@ class SpriteContent : public juce::Component, public juce::Timer
 {
 public:
     SpriteContent() { 
-        setSize(220, 512); // DOUBLED HEIGHT for reflection
+        setSize(220, 512); 
+        frameBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
+        reflectionBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         startTimerHz(30); 
     }
     ~SpriteContent() override { stopTimer(); }
@@ -37,8 +39,10 @@ public:
         }
     }
 
-   void paint(juce::Graphics& g) override {
+ void paint(juce::Graphics& g) override {
+        // Clear the main window
         g.fillAll(juce::Colours::transparentBlack);
+
         if (!spriteSheet.isValid()) return;
 
         int rowToDraw = isMouseOverOrDragging ? 9 : currentRow;
@@ -53,17 +57,47 @@ public:
         g.setOpacity(1.0f); 
         g.drawImage(spriteSheet, 0, yNudge, 220, 256, srcX, srcY, 220, 256); 
                     
-        // 2. DRAW SURFACE REFLECTION (Flipped Upside Down!)
+        // 2. PERFECT FLIP & FADE (Zero Lag, Fixed Ghosting)
         if (mirror) {
-            g.saveState();
-            g.setOpacity(0.35f); 
             
-            // Math to perfectly flip the Y-axis at the "floor" line
-            float flipOffset = (yNudge * 2.0f) + 512.0f; 
-            g.addTransform(juce::AffineTransform::scale(1.0f, -1.0f).translated(0.0f, flipOffset));
-            
-            g.drawImage(spriteSheet, 0, yNudge, 220, 256, srcX, srcY, 220, 256);
-            g.restoreState();
+            // A. HARD ERASE THE MEMORY BUFFERS
+            // This instantly fixes the glitching/duplication!
+            frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
+            reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
+
+            // B. Snapshot current frame
+            {
+                juce::Graphics gFrame(frameBuffer);
+                gFrame.drawImage(spriteSheet, 0, 0, 220, 256, srcX, srcY, 220, 256);
+            } 
+
+            // C. Manually read upside down and apply the fade
+            {
+                juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
+                juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
+
+                int fadeEnd = 100; 
+
+                for (int y = 0; y < 256; ++y) {
+                    if (y >= fadeEnd) break; 
+
+                    int flippedY = 255 - y; 
+
+                    float progress = (float)y / (float)fadeEnd;
+                    float curve = (1.0f - progress) * (1.0f - progress); 
+                    float alphaMod = 0.45f * curve; 
+
+                    for (int x = 0; x < 220; ++x) {
+                        juce::Colour c = srcData.getPixelColour(x, flippedY);
+                        if (c.getAlpha() > 0) {
+                            destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
+                        }
+                    }
+                }
+            }
+
+            // D. STAMP IT ON SCREEN
+            g.drawImageAt(reflectionBuffer, 0, yNudge + 256);
         }
     }
 
@@ -84,6 +118,8 @@ public:
 
 private:
     juce::Image spriteSheet;
+    juce::Image frameBuffer;
+    juce::Image reflectionBuffer; 
     juce::ComponentDragger dragger;
     int currentHz = 30; 
     bool isMouseOverOrDragging = false;
@@ -109,7 +145,7 @@ public:
         content = std::make_unique<SpriteContent>();
         
         setContentNonOwned(content.get(), true);
-        centreWithSize(220, 512); // DOUBLED HEIGHT
+        centreWithSize(220, 512); 
         setVisible(true);
     }
     

@@ -21,6 +21,7 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     squabDadLabel.setColour(juce::Label::textColourId, juce::Colours::black);
 
 
+
 // 2. LOAD BIRD LOGO (Updated for Squab_Logo.png)
     addAndMakeVisible(birdLogo);
     birdLogo.setImagePlacement(juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
