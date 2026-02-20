@@ -92,25 +92,32 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     syncButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
 
     // --- THE OPEN/CLOSED TOGGLE FIX ---
+
     addAndMakeVisible(openButton); 
     openButton.setClickingTogglesState(true);
-    openButton.setButtonText("Closed"); // Default state
+    
+    // Set the default state to ON (since the window spawns automatically)
+    openButton.setToggleState(true, juce::dontSendNotification);
+    openButton.setButtonText("Open"); 
+    
     openButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF222222)); // OFF state (Dark)
     openButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     openButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFFBB03B)); // ON state (Yellow)
     openButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
     
-    // Dynamic Text Swapper
+    // Dynamic Text Swapper AND Window Visibility Link
     openButton.onClick = [this] {
-        openButton.setButtonText(openButton.getToggleState() ? "Open" : "Closed");
+        bool isOpen = openButton.getToggleState();
+        openButton.setButtonText(isOpen ? "Open" : "Closed");
+        
+        // Hide or show the actual floating window!
+        if (spriteWindow != nullptr) {
+            spriteWindow->setVisible(isOpen);
+        }
     };
-    
-    addAndMakeVisible(resetButton); resetButton.setButtonText("Reset");
-    resetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF222222)); 
-    resetButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
 
     // 6. WINDOW INIT
-    spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
+   spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
     
     if (DEFAULT_CHARACTER_INDEX <= characterDB.size()) {
         categoryBox.setSelectedId(DEFAULT_CHARACTER_INDEX); 
