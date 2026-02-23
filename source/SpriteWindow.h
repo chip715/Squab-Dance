@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "SpriteData.h"
 
 class SpriteContent : public juce::Component, public juce::Timer
 {
@@ -10,6 +11,7 @@ public:
         reflectionBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         startTimerHz(30); 
     }
+    
     ~SpriteContent() override { stopTimer(); }
 
     void setSpeed(float hz) {
@@ -19,10 +21,15 @@ public:
             startTimerHz(currentHz);
         }
     }
-
-    void setImage(juce::Image img) { 
-        spriteSheet = img; 
-        repaint(); 
+    
+    // --- REPLACED SINGLE IMAGE WITH DATA SETTER ---
+    void setSpriteData(bool isGrid, const std::vector<AnimationDef>& anims, const std::vector<juce::Image>& imgs) {
+        isGridSprite = isGrid;
+        currentAnims = anims;
+        spriteSheets = imgs;
+        
+        // Use this to ensure the UI updates immediately
+        juce::MessageManager::callAsync([this]() { repaint(); });
     }
     
     void updateParams(int row, int frames, int hRow, int hFrames, bool mir) {
@@ -36,7 +43,6 @@ public:
 
     void resetAnimation() {
         currentFrame = 0;            
-        startTimerHz(currentHz);     
         repaint();
     }
 
@@ -48,55 +54,80 @@ public:
         }
     }
 
+    int getGlobalFrameOffset(int targetRow) {
+        int offset = 0;
+        for (int i = 0; i < targetRow && i < (int)currentAnims.size(); ++i) {
+            offset += currentAnims[i].frameCount;
+        }
+        return offset;
+    }
+
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colours::transparentBlack);
+        
+        if (spriteSheets.empty()) return;
 
-        if (!spriteSheet.isValid()) return;
-
-        int rowToDraw = isMouseOverOrDragging ? heldRow : currentRow;
+        int activeRow = isMouseOverOrDragging ? heldRow : currentRow;
         int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames; 
         if (activeFrames <= 0) activeFrames = 1; 
 
-        int srcX = (currentFrame % activeFrames) * 220;
-        int srcY = rowToDraw * 256;
-        int yNudge = -20; 
+        int sx = 0, sy = 0, sheetIndex = 0;
 
-        // 1. DRAW MAIN CHARACTER
-        g.setOpacity(1.0f); 
-        g.drawImage(spriteSheet, 0, yNudge, 220, 256, srcX, srcY, 220, 256); 
-                    
-        // 2. PERFECT FLIP & FADE (Zero Lag)
-        if (mirror) {
-            frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
-            reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
+        // --- COORDINATE MAPPING LOGIC ---
+        if (isGridSprite) {
+            int startOffset = getGlobalFrameOffset(activeRow);
+            int globalFrame = startOffset + (currentFrame % activeFrames);
+            
+            sheetIndex = globalFrame / 72;
+            int localFrameIndex = globalFrame % 72;
+            
+            sx = (localFrameIndex % 9) * 220;
+            sy = (localFrameIndex / 9) * 256;
+        } else {
+            sx = (currentFrame % activeFrames) * 220;
+            sy = activeRow * 256;
+            sheetIndex = 0;
+        }
 
-            {
-                juce::Graphics gFrame(frameBuffer);
-                gFrame.drawImage(spriteSheet, 0, 0, 220, 256, srcX, srcY, 220, 256);
-            } 
+        // --- RENDERING ---
+        if (sheetIndex < (int)spriteSheets.size() && spriteSheets[sheetIndex].isValid()) {
+            int yNudge = -20; 
+            auto& currentImg = spriteSheets[sheetIndex];
 
-            {
-                juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
-                juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
+            g.setOpacity(1.0f); 
+            g.drawImage(currentImg, 0, yNudge, 220, 256, sx, sy, 220, 256);
+            
+            if (mirror) {
+                frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
+                reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
 
-                int fadeEnd = 100; 
+                {
+                    juce::Graphics gFrame(frameBuffer);
+                    gFrame.drawImage(currentImg, 0, 0, 220, 256, sx, sy, 220, 256);
+                } 
 
-                for (int y = 0; y < 256; ++y) {
-                    if (y >= fadeEnd) break; 
-                    int flippedY = 255 - y; 
-                    float progress = (float)y / (float)fadeEnd;
-                    float curve = (1.0f - progress) * (1.0f - progress); 
-                    float alphaMod = 0.45f * curve; 
+                {
+                    juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
+                    juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
 
-                    for (int x = 0; x < 220; ++x) {
-                        juce::Colour c = srcData.getPixelColour(x, flippedY);
-                        if (c.getAlpha() > 0) {
-                            destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
+                    int fadeEnd = 100; 
+                    for (int y = 0; y < 256; ++y) {
+                        if (y >= fadeEnd) break; 
+                        int flippedY = 255 - y; 
+                        float progress = (float)y / (float)fadeEnd;
+                        float curve = (1.0f - progress) * (1.0f - progress); 
+                        float alphaMod = 0.45f * curve; 
+
+                        for (int x = 0; x < 220; ++x) {
+                            juce::Colour c = srcData.getPixelColour(x, flippedY);
+                            if (c.getAlpha() > 0) {
+                                destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
+                            }
                         }
                     }
                 }
+                g.drawImageAt(reflectionBuffer, 0, yNudge + 256);
             }
-            g.drawImageAt(reflectionBuffer, 0, yNudge + 256);
         }
     }
 
@@ -116,18 +147,19 @@ public:
     }
 
 private:
-    juce::Image spriteSheet;
+    std::vector<juce::Image> spriteSheets;
+    std::vector<AnimationDef> currentAnims;
+    bool isGridSprite = false;
+
     juce::Image frameBuffer;
     juce::Image reflectionBuffer; 
     juce::ComponentDragger dragger;
+    
     int currentHz = 30; 
     bool isMouseOverOrDragging = false;
-    int currentFrame = 0;
-    int totalFrames = 8; 
-    int currentRow = 0;
-    int heldRow = 9;
-    int heldFrames = 8;
+    int currentFrame = 0, totalFrames = 8, currentRow = 0, heldRow = 9, heldFrames = 8;
     bool mirror = false;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpriteContent)
 };
 
 class SpriteWindow : public juce::DocumentWindow

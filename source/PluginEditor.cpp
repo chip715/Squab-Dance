@@ -2,7 +2,6 @@
 #include "PluginEditor.h"
 #include <unordered_map>
 
-
 const int DEFAULT_CHARACTER_INDEX = 11; 
 
 SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioProcessor& p)
@@ -23,9 +22,7 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     squabDadLabel.setFont(juce::Font(12.0f, juce::Font::plain));
     squabDadLabel.setColour(juce::Label::textColourId, juce::Colours::black);
 
-
-
-// 2. LOAD BIRD LOGO (Updated for Squab_Logo.png)
+    // 2. LOAD BIRD LOGO (Updated for Squab_Logo.png)
     addAndMakeVisible(birdLogo);
     birdLogo.setImagePlacement(juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
     
@@ -104,11 +101,8 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     syncButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
 
     // --- THE OPEN/CLOSED TOGGLE FIX ---
-
     addAndMakeVisible(openButton); 
     openButton.setClickingTogglesState(true);
-    
-    // Set the default state to ON (since the window spawns automatically)
     openButton.setToggleState(true, juce::dontSendNotification);
     openButton.setButtonText("Open"); 
     
@@ -117,12 +111,9 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     openButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFFBB03B)); // ON state (Yellow)
     openButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
     
-    // Dynamic Text Swapper AND Window Visibility Link
     openButton.onClick = [this] {
         bool isOpen = openButton.getToggleState();
         openButton.setButtonText(isOpen ? "Open" : "Closed");
-        
-        // Hide or show the actual floating window!
         if (spriteWindow != nullptr) {
             spriteWindow->setVisible(isOpen);
         }
@@ -132,7 +123,6 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     resetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF222222)); 
     resetButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     
-    // --- ADD THE CLICK BEHAVIOR ---
     resetButton.onClick = [this] {
         if (spriteWindow != nullptr) {
             spriteWindow->getContent()->resetAnimation();
@@ -140,7 +130,7 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     };
 
     // 6. WINDOW INIT
-   spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
+    spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
     
     if (DEFAULT_CHARACTER_INDEX <= characterDB.size()) {
         categoryBox.setSelectedId(DEFAULT_CHARACTER_INDEX); 
@@ -245,25 +235,110 @@ void SquabDanceAudioProcessorEditor::preCacheImages() {
     }
 
     for (auto& charDef : characterDB) {
-        juce::String cleanTarget = charDef.filename.replace(" ", "").replace(".", "").replace("_", "").toLowerCase();
+        // Use the first filename in the vector as the primary cache reference
+        if (!charDef.filenames.empty()) {
+            juce::String firstFile = charDef.filenames[0];
+            juce::String cleanTarget = firstFile.replace(" ", "").replace(".", "").replace("_", "").toLowerCase();
 
-        ResourcePointer ptr;
-        if (resourceMap.count(cleanTarget)) {
-            int idx = resourceMap[cleanTarget];
-            ptr.data = BinaryData::getNamedResource(BinaryData::namedResourceList[idx], ptr.size);
+            ResourcePointer ptr;
+            if (resourceMap.count(cleanTarget)) {
+                int idx = resourceMap[cleanTarget];
+                ptr.data = BinaryData::getNamedResource(BinaryData::namedResourceList[idx], ptr.size);
+            }
+            resourceCache.push_back(ptr); 
         }
-        resourceCache.push_back(ptr); 
     }
 }
 
-void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
-    if (spriteWindow != nullptr && index >= 0 && index < (int)resourceCache.size()) {
-        auto& res = resourceCache[index];
+// void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
+//     if (index < 0 || index >= (int)characterDB.size()) return;
+    
+//     auto& charDef = characterDB[index];
+//     std::vector<juce::Image> loadedImages;
+    
+//     for (const auto& fname : charDef.filenames) {
+//         int size = 0;
+//         // Strip extensions and formatting
+//         juce::String cleanTarget = fname.upToFirstOccurrenceOf(".", false, false)
+//                                        .replace("_", "").replace(" ", "").toLowerCase();
         
-        if (res.data != nullptr) {
-            // Only decompress the ONE image we actually need right now
-            auto img = juce::ImageCache::getFromMemory(res.data, res.size);
-            spriteWindow->getContent()->setImage(img);
+//         // Use the JUCE helper to get data directly by name
+//         const char* data = BinaryData::getNamedResource(cleanTarget.toUTF8(), size);
+        
+//         // If the direct name check fails, do the fallback fuzzy search
+//         if (data == nullptr) {
+//             for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
+//                 juce::String resName = juce::String(BinaryData::namedResourceList[i]).replace("_", "").toLowerCase();
+//                 if (resName == cleanTarget) {
+//                     data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
+//                     break;
+//                 }
+//             }
+//         }
+
+//         if (data) {
+//             loadedImages.push_back(juce::ImageCache::getFromMemory(data, size));
+//         }
+//     }
+    
+//     if (auto* content = spriteWindow->getContent()) {
+//         content->setSpriteData(charDef.isGridSprite, charDef.anims, loadedImages);
+//     }
+void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
+
+    DBG("--- CAR RESOURCE CHECK ---");
+    for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
+        juce::String resName = BinaryData::namedResourceList[i];
+        // Only print resources that contain the word "car" so we don't flood the console
+        if (resName.toLowerCase().contains("car")) {
+            DBG("JUCE compiled this file as: " << resName);
         }
+    }
+    DBG("--------------------------");
+
+    
+    if (index < 0 || index >= (int)characterDB.size()) return;
+    
+    auto& charDef = characterDB[index];
+    std::vector<juce::Image> loadedImages;
+    
+    DBG("--- Loading Character: " << charDef.categoryName << " ---");
+    
+    for (const auto& fname : charDef.filenames) {
+        int size = 0;
+        // Just get the name without .png and make it lowercase
+        juce::String searchTarget = fname.upToFirstOccurrenceOf(".", false, false).toLowerCase();
+                                       
+        DBG("Searching for BinaryData matching: " << searchTarget);
+        bool found = false;
+        
+        for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
+            juce::String resName = juce::String(BinaryData::namedResourceList[i]).toLowerCase();
+            
+            // Check if the resource name contains our filename 
+            if (resName.contains(searchTarget.replace(" ", "_")) || resName.contains(searchTarget.replace(" ", ""))) {
+                const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
+                if (data != nullptr) {
+                    juce::Image img = juce::ImageCache::getFromMemory(data, size);
+                    if (img.isValid()) {
+                        loadedImages.push_back(img);
+                        found = true;
+                        DBG("SUCCESS: Loaded " << BinaryData::namedResourceList[i]);
+                    }
+                }
+                break;
+            }
+        }
+        
+        if (!found) {
+            DBG("WARNING: Could not find resource for " << fname);
+        }
+    }
+    
+    DBG("Editor: Loaded " << loadedImages.size() << " images for index " << index);
+    
+    if (spriteWindow != nullptr && spriteWindow->getContent() != nullptr) {
+        auto* content = spriteWindow->getContent();
+        content->setSpriteData(charDef.isGridSprite, charDef.anims, loadedImages);
     }
 }

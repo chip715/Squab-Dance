@@ -58,9 +58,16 @@ juce_add_binary_data(SquabAssets
         "Assets/Anime.png"
         "Assets/Anime 2.png"
         "Assets/Fruity Chan.png"
-        "Assets/Cars.png"
         "Assets/Other Dance.png"
         "Assets/Squab_Logo.png"
+        "Assets/Cars/Cars-0.png"
+        "Assets/Cars/Cars-1.png"
+        "Assets/Cars/Cars-2.png"
+        "Assets/Cars/Cars-3.png"
+        "Assets/Cars/Cars-4.png"
+        "Assets/Cars/Cars-5.png"
+        "Assets/Cars/Cars-6.png"
+        "Assets/Cars/Cars-7.png"
 )
 
 # 6. Link the Assets to your Plugin
