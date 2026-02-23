@@ -48,7 +48,21 @@ public:
 
     void timerCallback() override {
         int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames;
-        if (activeFrames > 0) {
+        if (activeFrames <= 0) return;
+
+        if (isSyncMode) {
+            if (isPlaying && currentBeatLength > 0.0) {
+                // Determine which frame we should be on based on the musical playhead
+                int newFrame = static_cast<int>(currentPpq / currentBeatLength) % activeFrames;
+                if (newFrame < 0) newFrame += activeFrames; 
+                
+                if (currentFrame != newFrame) {
+                    currentFrame = newFrame;
+                    repaint();
+                }
+            }
+        } else {
+            // Standard Hz Free-Running Logic
             currentFrame = (currentFrame + 1) % activeFrames;
             repaint();
         }
@@ -66,6 +80,8 @@ public:
         g.fillAll(juce::Colours::transparentBlack);
         
         if (spriteSheets.empty()) return;
+
+        g.addTransform(juce::AffineTransform::scale(currentScale));
 
         int activeRow = isMouseOverOrDragging ? heldRow : currentRow;
         int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames; 
@@ -91,7 +107,7 @@ public:
 
         // --- RENDERING ---
         if (sheetIndex < (int)spriteSheets.size() && spriteSheets[sheetIndex].isValid()) {
-            int yNudge = -20; 
+            int yNudge = 0; 
             auto& currentImg = spriteSheets[sheetIndex];
 
             g.setOpacity(1.0f); 
@@ -145,7 +161,33 @@ public:
         isMouseOverOrDragging = false;
         repaint();
     }
+    void updateSync(bool synced, double beatLength, double ppq, bool playing) {
+        if (isSyncMode != synced) {
+            isSyncMode = synced;
+            // Run at a fast 60Hz lock to ensure the UI catches the PPQ smoothly
+            if (isSyncMode) startTimerHz(60); 
+            else startTimerHz(currentHz);
+        }
+        currentBeatLength = beatLength;
+        currentPpq = ppq;
+        isPlaying = playing;
+    }
 
+    void setScale(float newScale) {
+        // Clamp to a minimum of 0.1 (10%) so the window never shrinks to 0x0 and disappears forever!
+        newScale = juce::jmax(0.1f, newScale); 
+        
+        if (currentScale != newScale) {
+            currentScale = newScale;
+            // Resize the actual floating window to match the scaled graphics
+            if (auto* win = findParentComponentOfClass<juce::DocumentWindow>()) {
+                int newW = juce::roundToInt(220 * currentScale);
+                int newH = juce::roundToInt(512 * currentScale);
+                win->setSize(newW, newH);
+            }
+            repaint();
+        }
+    }
 private:
     std::vector<juce::Image> spriteSheets;
     std::vector<AnimationDef> currentAnims;
@@ -154,6 +196,12 @@ private:
     juce::Image frameBuffer;
     juce::Image reflectionBuffer; 
     juce::ComponentDragger dragger;
+
+    bool isSyncMode = false;
+    double currentBeatLength = 1.0;
+    double currentPpq = 0.0;
+    bool isPlaying = false;
+    float currentScale = 1.0f;
     
     int currentHz = 30; 
     bool isMouseOverOrDragging = false;

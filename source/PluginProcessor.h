@@ -29,8 +29,13 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    // This handles your parameters (Mirror, X, Y)
+    // This handles your parameters (Mirror, X, Y, Sync)
     juce::AudioProcessorValueTreeState apvts;
+
+    // --- NEW PLAYHEAD VARIABLES ---
+    std::atomic<double> currentBpm { 120.0 };
+    std::atomic<double> currentPpq { 0.0 };
+    std::atomic<bool> isPlaying { false };
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

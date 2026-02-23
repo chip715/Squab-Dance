@@ -24,14 +24,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
     // 2. Style Selector (Row 0 to 9)
     // We use a Range of 0-9, with a default of 0 (Row 1)
     layout.add(std::make_unique<juce::AudioParameterInt>("style", "Animation Style", 0, 9, 0));
-
-    // 3. Speed (HZ) - Range 1Hz to 30Hz, default 12Hz
+    
+    // 3. Scale (0% to 300%, default 100%)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "scale", 
+        "Scale", 
+        juce::NormalisableRange<float>(0.0f, 300.0f, 1.0f), 100.0f));
+        
+    // 4. Speed (HZ) - Range 1Hz to 30Hz, default 12Hz
    layout.add(std::make_unique<juce::AudioParameterFloat>(
     "speed", 
     "Speed", 
-    juce::NormalisableRange<float>(1.0f, 30.0f, 1.0f), // The 3rd argument (1.0f) is the step size!
-    30.0f  // Default value
-));
+    juce::NormalisableRange<float>(1.0f, 30.0f, 1.0f), 30.0f ));
+
+// 1. The Mode Toggle (Hz vs Note)
+    layout.add(std::make_unique<juce::AudioParameterBool>("sync_mode", "Sync Mode", false));
+
+    // 2. The Sync Rate Dropdown/Slider
+    juce::StringArray syncOptions = { 
+        "1/2048", "1/1024", "1/512", "1/256", "1/128", "1/64", "1/48", "1/32", "1/24", 
+        "1/16", "1/12", "1/8", "1/6", "3/16", "1/4", "5/16", "1/3", "3/8", "1/2", "3/4", "1" 
+    };
+    // Default to index 14 (which is "1/4" note)
+    layout.add(std::make_unique<juce::AudioParameterChoice>("sync_rate", "Sync Rate", syncOptions, 14));
 
     // 4. X and Y Offsets (Keep these for positioning)
     layout.add(std::make_unique<juce::AudioParameterFloat>("xoffset", "X Offset", -500.0f, 500.0f, 0.0f));
@@ -56,8 +71,20 @@ void SquabDanceAudioProcessor::releaseResources() {}
 
 void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    // Audio pass-through (silence cleanup)
     juce::ScopedNoDenormals noDenormals;
+
+    // --- OPTIMIZED PLAYHEAD FETCH (Low Branching, Stack Memory) ---
+    if (auto* ph = getPlayHead()) {
+        if (auto pos = ph->getPosition()) { 
+            // .orFallback() eliminates the need for inner 'if' statements
+            // memory_order_relaxed prevents thread-locking overhead
+            currentBpm.store(pos->getBpm().orFallback(120.0), std::memory_order_relaxed);
+            currentPpq.store(pos->getPpqPosition().orFallback(0.0), std::memory_order_relaxed);
+            isPlaying.store(pos->getIsPlaying(), std::memory_order_relaxed);
+        }
+    }
+
+    // Audio pass-through (silence cleanup)
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
