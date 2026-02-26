@@ -34,7 +34,7 @@ public:
             "Cat4.png", "Cat5.png", "Cat6.png", "Cat7.png"
         }, true); // <-- Changed to true
         cat.anims = {
-            {"Cat Boom", 12}, {"Maxwell Rock", 48}, {"Vibe Cat", 82}, {"Party Cat", 69}, {"Jumping Cat", 111},
+            {"Cat Boom", 12}, {"Maxwell Rock", 48}, {"Vibe Cat", 81}, {"Party Cat", 69}, {"Jumping Cat", 111},
             {"Cat Moment", 4}, {"Cat Grab", 92}, {"Gangnam Cat", 48}, {"Wave Cat", 20}, {"Maxwell Spin", 56}
         };
         db.push_back(cat);
