@@ -96,8 +96,11 @@ private:
     std::vector<CharacterDef> characterDB;
     std::unique_ptr<SpriteWindow> spriteWindow;
     
-    void preCacheImages();
+     void preCacheImages();
     void loadCharacterImage(int index);
+    bool isSyncMode = false; 
+    void triggerBackgroundLoad(int index);
+    
     std::vector<juce::Image> cachedSprites;
 
     struct ResourcePointer {

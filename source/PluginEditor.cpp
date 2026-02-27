@@ -293,29 +293,31 @@ void SquabDanceAudioProcessorEditor::resized() {
 } 
 
 void SquabDanceAudioProcessorEditor::preCacheImages() {
-    resourceCache.clear();
+    cachedSprites.clear();
 
-    std::unordered_map<juce::String, int> resourceMap;
-    for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
-        juce::String cleanName = juce::String(BinaryData::namedResourceList[i]).replace("_", "").toLowerCase();
-        resourceMap[cleanName] = i;
-    }
-
-    for (auto& charDef : characterDB) {
-        if (!charDef.filenames.empty()) {
-            juce::String firstFile = charDef.filenames[0];
-            juce::String cleanTarget = firstFile.replace(" ", "").replace(".", "").replace("_", "").toLowerCase();
-
-            ResourcePointer ptr;
-            if (resourceMap.count(cleanTarget)) {
-                int idx = resourceMap[cleanTarget];
-                ptr.data = BinaryData::getNamedResource(BinaryData::namedResourceList[idx], ptr.size);
+    // Launch a background thread so the UI doesn't freeze during startup
+    juce::Thread::launch([this]() {
+        DBG("--- Background Image Caching Started ---");
+        
+        for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
+            int size = 0;
+            const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
+            
+            if (data != nullptr) {
+                // 1. Decode the PNG data in the background (This is the heavy CPU math!)
+                juce::Image img = juce::ImageCache::getFromMemory(data, size);
+                
+                if (img.isValid()) {
+                    // 2. Safely push the decoded image to the main thread so it stays alive in RAM
+                    juce::MessageManager::callAsync([this, img]() {
+                        cachedSprites.push_back(img);
+                    });
+                }
             }
-            resourceCache.push_back(ptr); 
         }
-    }
+        DBG("--- Background Image Caching Complete ---");
+    });
 }
-
 void SquabDanceAudioProcessorEditor::loadCharacterImage(int index) {
     if (index < 0 || index >= (int)characterDB.size()) return;
     
