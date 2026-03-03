@@ -76,11 +76,12 @@ public:
         return offset;
     }
 
-    void paint(juce::Graphics& g) override {
+void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colours::transparentBlack);
         
         if (spriteSheets.empty()) return;
 
+        // Apply Master Scale (Window Size)
         g.addTransform(juce::AffineTransform::scale(currentScale));
 
         int activeRow = isMouseOverOrDragging ? heldRow : currentRow;
@@ -89,14 +90,11 @@ public:
 
         int sx = 0, sy = 0, sheetIndex = 0;
 
-        // --- COORDINATE MAPPING LOGIC ---
         if (isGridSprite) {
             int startOffset = getGlobalFrameOffset(activeRow);
             int globalFrame = startOffset + (currentFrame % activeFrames);
-            
             sheetIndex = globalFrame / 72;
             int localFrameIndex = globalFrame % 72;
-            
             sx = (localFrameIndex % 9) * 220;
             sy = (localFrameIndex / 9) * 256;
         } else {
@@ -105,48 +103,95 @@ public:
             sheetIndex = 0;
         }
 
+        // --- NEW EXPLICIT BOUNDS MATH (Fixes all jitter and anchor issues!) ---
+        float pScale = 1.0f;
+        if (audioReactOn && audioLevel > 0.001f && reactPump > 0.0f) {
+            pScale += (audioLevel * (reactPump / 100.0f) * 0.45f); 
+        }
+
+        // Calculate exact pixel dimensions for the pumped image
+        float destW = 220.0f * pScale;
+        float destH = 256.0f * pScale;
+        
+        // Anchor X to the exact horizontal center
+        float destX = 110.0f - (destW * 0.5f);
+        // Anchor Y so the bottom edge ALWAYS touches the 256px floor line
+        float destY = 256.0f - destH;
+
         // --- RENDERING ---
         if (sheetIndex < (int)spriteSheets.size() && spriteSheets[sheetIndex].isValid()) {
-            int yNudge = 0; 
             auto& currentImg = spriteSheets[sheetIndex];
-
-            g.setOpacity(1.0f); 
-            g.drawImage(currentImg, 0, yNudge, 220, 256, sx, sy, 220, 256);
+            juce::Image sourceToDraw = currentImg; 
             
-            if (mirror) {
-                frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
-                reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
+            int drawSourceX = sx;
+            int drawSourceY = sy;
 
+            // --- FAST PIXEL HUE/SATURATION ENGINE ---
+            if (audioReactOn && audioLevel > 0.001f && (reactColor > 0.0f || reactIntensity > 0.0f)) {
+                frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
                 {
                     juce::Graphics gFrame(frameBuffer);
                     gFrame.drawImage(currentImg, 0, 0, 220, 256, sx, sy, 220, 256);
-                } 
+                }
 
-                {
-                    juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
-                    juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
-
-                    int fadeEnd = 100; 
-                    for (int y = 0; y < 256; ++y) {
-                        if (y >= fadeEnd) break; 
-                        int flippedY = 255 - y; 
-                        float progress = (float)y / (float)fadeEnd;
-                        float curve = (1.0f - progress) * (1.0f - progress); 
-                        float alphaMod = 0.45f * curve; 
-
-                        for (int x = 0; x < 220; ++x) {
-                            juce::Colour c = srcData.getPixelColour(x, flippedY);
-                            if (c.getAlpha() > 0) {
-                                destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
-                            }
+                juce::Image::BitmapData data(frameBuffer, juce::Image::BitmapData::readWrite);
+                float hueShift = audioLevel * (reactColor / 100.0f);
+                float satBoost = audioLevel * (reactIntensity / 100.0f) * 3.0f;
+                
+                for (int y = 0; y < 256; ++y) {
+                    for (int x = 0; x < 220; ++x) {
+                        juce::Colour c = data.getPixelColour(x, y);
+                        if (c.getAlpha() > 0) {
+                            data.setPixelColour(x, y, juce::Colour::fromHSV(
+                                std::fmod(c.getHue() + hueShift, 1.0f),
+                                juce::jmin(1.0f, c.getSaturation() + satBoost),
+                                c.getBrightness(), c.getFloatAlpha()
+                            ));
                         }
                     }
                 }
-                g.drawImageAt(reflectionBuffer, 0, yNudge + 256);
+                sourceToDraw = frameBuffer; 
+                drawSourceX = 0;
+                drawSourceY = 0;
+            }
+
+            g.setOpacity(1.0f); 
+            // Draw the main character mapped to our custom pumped rectangle
+            g.drawImage(sourceToDraw, destX, destY, destW, destH, drawSourceX, drawSourceY, 220, 256); 
+            
+            // --- REFLECTION ---
+            if (mirror) {
+                if (sourceToDraw != frameBuffer) {
+                    frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
+                    juce::Graphics gFrame(frameBuffer);
+                    gFrame.drawImage(sourceToDraw, 0, 0, 220, 256, drawSourceX, drawSourceY, 220, 256);
+                }
+
+                reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
+                juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
+                juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
+
+                int fadeEnd = 100; 
+                for (int y = 0; y < 256; ++y) {
+                    if (y >= fadeEnd) break; 
+                    int flippedY = 255 - y; 
+                    float progress = (float)y / (float)fadeEnd;
+                    float curve = (1.0f - progress) * (1.0f - progress); 
+                    float alphaMod = 0.45f * curve; 
+
+                    for (int x = 0; x < 220; ++x) {
+                        juce::Colour c = srcData.getPixelColour(x, flippedY);
+                        if (c.getAlpha() > 0) {
+                            destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
+                        }
+                    }
+                }
+                // Stretch the reflection DOWN into the floor so it perfectly matches the pumped feet!
+                g.drawImage(reflectionBuffer, destX, 256.0f, destW, destH, 0, 0, 220, 256);
             }
         }
     }
-
+    
     void mouseDown (const juce::MouseEvent& e) override {
         isMouseOverOrDragging = true;
         if (auto* win = findParentComponentOfClass<juce::DocumentWindow>())
@@ -173,21 +218,26 @@ public:
         isPlaying = playing;
     }
 
-    void setScale(float newScale) {
-        // Clamp to a minimum of 0.1 (10%) so the window never shrinks to 0x0 and disappears forever!
+void setScale(float newScale) {
         newScale = juce::jmax(0.1f, newScale); 
-        
         if (currentScale != newScale) {
             currentScale = newScale;
-            // Resize the actual floating window to match the scaled graphics
             if (auto* win = findParentComponentOfClass<juce::DocumentWindow>()) {
                 int newW = juce::roundToInt(220 * currentScale);
                 int newH = juce::roundToInt(512 * currentScale);
-                win->setSize(newW, newH);
+                
+                // THE FIX: This forces the OS window to expand equally from its current center point!
+                auto bounds = win->getBounds();
+                win->setBounds(bounds.withSizeKeepingCentre(newW, newH));
             }
             repaint();
         }
     }
+
+void updateAudioReact(bool on, float intensity, float color, float pump, float level) {
+        audioReactOn = on; reactIntensity = intensity; reactColor = color; reactPump = pump; audioLevel = level;
+    }
+
 private:
     std::vector<juce::Image> spriteSheets;
     std::vector<AnimationDef> currentAnims;
@@ -207,6 +257,12 @@ private:
     bool isMouseOverOrDragging = false;
     int currentFrame = 0, totalFrames = 8, currentRow = 0, heldRow = 9, heldFrames = 8;
     bool mirror = false;
+    bool audioReactOn = false;
+    float reactIntensity = 0.0f;
+    float reactColor = 0.0f;
+    float reactPump = 0.0f;
+    float audioLevel = 0.0f;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpriteContent)
 };
 

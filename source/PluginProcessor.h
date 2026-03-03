@@ -36,6 +36,7 @@ public:
     std::atomic<double> currentBpm { 120.0 };
     std::atomic<double> currentPpq { 0.0 };
     std::atomic<bool> isPlaying { false };
+    std::atomic<float> currentAudioLevel { 0.0f };
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

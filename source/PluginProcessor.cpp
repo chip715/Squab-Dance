@@ -52,6 +52,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
     layout.add(std::make_unique<juce::AudioParameterFloat>("xoffset", "X Offset", -500.0f, 500.0f, 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>("yoffset", "Y Offset", -500.0f, 500.0f, 0.0f));
 
+    // --- AUDIO REACTIVITY ---
+    layout.add(std::make_unique<juce::AudioParameterBool>("audio_react", "Audio Reactivity", false));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("react_intensity", "Intensity", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("react_color", "Color", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("react_pump", "Pump", 0.0f, 100.0f, 100.0f));
+
+
     return layout;
 }
 
@@ -65,29 +72,51 @@ int SquabDanceAudioProcessor::getCurrentProgram() { return 0; }
 void SquabDanceAudioProcessor::setCurrentProgram (int index) {}
 const juce::String SquabDanceAudioProcessor::getProgramName (int index) { return {}; }
 void SquabDanceAudioProcessor::changeProgramName (int index, const juce::String& newName) {}
-
 void SquabDanceAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock) {}
 void SquabDanceAudioProcessor::releaseResources() {}
 
 void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // --- OPTIMIZED PLAYHEAD FETCH (Low Branching, Stack Memory) ---
+    // --- OPTIMIZED PLAYHEAD FETCH ---
     if (auto* ph = getPlayHead()) {
         if (auto pos = ph->getPosition()) { 
-            // .orFallback() eliminates the need for inner 'if' statements
-            // memory_order_relaxed prevents thread-locking overhead
             currentBpm.store(pos->getBpm().orFallback(120.0), std::memory_order_relaxed);
             currentPpq.store(pos->getPpqPosition().orFallback(0.0), std::memory_order_relaxed);
             isPlaying.store(pos->getIsPlaying(), std::memory_order_relaxed);
         }
     }
 
-    // Audio pass-through (silence cleanup)
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
+    // --- AUDIO ENVELOPE FOLLOWER ---
+    float rms = 0.0f;
+    for (int channel = 0; channel < totalNumInputChannels; ++channel) {
+        auto* readPointer = buffer.getReadPointer(channel);
+        for (int i = 0; i < buffer.getNumSamples(); ++i) {
+            rms += readPointer[i] * readPointer[i];
+        }
+    }
+    
+    // DRAMATIC BOOST: Scaled to 10.0x for aggressive visual response
+    rms = std::sqrt(rms / (totalNumInputChannels * buffer.getNumSamples() + 1e-6f)) * 10.0f;
+    
+    // ROCK SOLID ENVELOPE: Eliminates the visual trembling
+    float prevLevel = currentAudioLevel.load(std::memory_order_relaxed);
+    float smoothedLevel = prevLevel;
+    
+    if (rms > prevLevel) {
+        // Fast Attack (Punches instantly on the drum hit)
+        smoothedLevel = prevLevel + 0.4f * (rms - prevLevel); 
+    } else {
+        // Slow Release (Glides smoothly down, ignoring wave ripple)
+        smoothedLevel = prevLevel + 0.015f * (rms - prevLevel); 
+    }
+    
+    currentAudioLevel.store(juce::jmin(1.0f, smoothedLevel), std::memory_order_relaxed);
 
+    // Audio pass-through (silence cleanup)
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 }

@@ -7,7 +7,7 @@ const int DEFAULT_CHARACTER_INDEX = 11;
 SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (460, 260); 
+    setSize (760, 260); 
     characterDB = SpriteDatabase::getDatabase();
     preCacheImages();
 
@@ -170,6 +170,44 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
             spriteWindow->getContent()->resetAnimation();
         }
     };
+// --- AUDIO REACTIVITY INITIALIZATION ---
+    addAndMakeVisible(reactTitleLabel);
+    reactTitleLabel.setText("Audio Reactivity", juce::dontSendNotification);
+    reactTitleLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFAAAAAA));
+
+    addAndMakeVisible(reactButton);
+    reactButton.setClickingTogglesState(true);
+    reactButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A2A)); 
+    reactButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    reactButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFFBB03B)); 
+    reactButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+    reactAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "audio_react", reactButton);
+    
+    reactButton.onClick = [this] {
+        reactButton.setButtonText(reactButton.getToggleState() ? "Audio Reactive On" : "Audio Reactive Off");
+    };
+    reactButton.setButtonText(*audioProcessor.apvts.getRawParameterValue("audio_react") > 0.5f ? "Audio Reactive On" : "Audio Reactive Off");
+
+    auto setupReactKnob = [this](juce::Slider& s, juce::Label& l, juce::String text, juce::String paramID, std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& attach) {
+        addAndMakeVisible(l);
+        l.setText(text, juce::dontSendNotification);
+        l.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        l.setJustificationType(juce::Justification::centred);
+        
+        addAndMakeVisible(s);
+        s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+        s.setColour(juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
+        s.setNumDecimalPlacesToDisplay(0); 
+        s.setTextValueSuffix(" %");        
+        s.setLookAndFeel(&customLookAndFeel);
+        s.setDoubleClickReturnValue(true, 100.0, juce::ModifierKeys::noModifiers);
+        attach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, paramID, s);
+    };
+
+    setupReactKnob(intensitySlider, intensityLabel, "Intensity", "react_intensity", intensityAttachment);
+    setupReactKnob(colorSlider, colorLabel, "Color", "react_color", colorAttachment);
+    setupReactKnob(pumpSlider, pumpLabel, "Pump", "react_pump", pumpAttachment);
 
     // 6. WINDOW INIT
     spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
@@ -195,6 +233,12 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
 
     bool isSync = *audioProcessor.apvts.getRawParameterValue("sync_mode") > 0.5f;
     int syncIdx = (int)*audioProcessor.apvts.getRawParameterValue("sync_rate");
+    bool reactOn = *audioProcessor.apvts.getRawParameterValue("audio_react") > 0.5f;
+    float reactInt = *audioProcessor.apvts.getRawParameterValue("react_intensity");
+    float reactCol = *audioProcessor.apvts.getRawParameterValue("react_color");
+    float reactPumpAmount = *audioProcessor.apvts.getRawParameterValue("react_pump");
+    
+    spriteWindow->getContent()->updateAudioReact(reactOn, reactInt, reactCol, reactPumpAmount, audioProcessor.currentAudioLevel.load());
     
     const double syncBeatLengths[] = {
         4.0/2048.0, 4.0/1024.0, 4.0/512.0, 4.0/256.0, 4.0/128.0, 4.0/64.0, 4.0/48.0, 4.0/32.0,
@@ -290,6 +334,23 @@ void SquabDanceAudioProcessorEditor::resized() {
 
     // Exact baseline match
     squabDadLabel.setBounds(btnX, 205, 100, 20);
+
+    // --- REACTIVITY COLUMN ---
+    int reactCol = 480;
+    reactTitleLabel.setBounds(reactCol, 35, 150, 20);
+    reactButton.setBounds(reactCol, 60, 240, 60);
+    
+    int reactKnobY = 150;
+    intensityLabel.setBounds(reactCol, 130, 60, 20);
+    intensitySlider.setBounds(reactCol, reactKnobY, 60, 75);
+    
+    colorLabel.setBounds(reactCol + 90, 130, 60, 20);
+    colorSlider.setBounds(reactCol + 90, reactKnobY, 60, 75);
+    
+    pumpLabel.setBounds(reactCol + 180, 130, 60, 20);
+    pumpSlider.setBounds(reactCol + 180, reactKnobY, 60, 75);
+
+    
 } 
 
 void SquabDanceAudioProcessorEditor::preCacheImages() {

@@ -85,6 +85,22 @@ private:
     juce::TextButton openButton;
     juce::TextButton resetButton;
 
+    // --- AUDIO REACTIVITY UI ---
+    juce::Label reactTitleLabel;
+    juce::TextButton reactButton;
+    
+    juce::Slider intensitySlider;
+    juce::Label intensityLabel;
+    juce::Slider colorSlider;
+    juce::Label colorLabel;
+    juce::Slider pumpSlider;
+    juce::Label pumpLabel;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reactAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> colorAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pumpAttachment;
+
     // Attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> categoryAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> animationAttachment;
@@ -92,6 +108,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> mirrorAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> syncAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> scaleAttachment;
+
+    
 
     std::vector<CharacterDef> characterDB;
     std::unique_ptr<SpriteWindow> spriteWindow;
