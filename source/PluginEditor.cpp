@@ -65,6 +65,30 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     animLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFAAAAAA));
     animLabel.attachToComponent(&animationBox, false);
 
+    addAndMakeVisible(randomButton);
+    randomButton.setButtonText("Click for Random Image");
+    randomButton.setLookAndFeel(&customLookAndFeel); // Applies the Pill Shape!
+    // Set a vibrant "Fire" base color (Vibrant Orange/Amber)
+    randomButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFFE67E22)); 
+    randomButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    
+    randomButton.onClick = [this] {
+        if (characterDB.empty()) return;
+        
+        // 1. Pick a random category
+        int randomCat = juce::Random::getSystemRandom().nextInt((int)characterDB.size());
+        
+        // Use sendNotificationSync so the animationBox populates *immediately* before step 2
+        categoryBox.setSelectedId(randomCat + 1, juce::sendNotificationSync); 
+        
+        // 2. Pick a random animation within that new category
+        int numAnims = characterDB[randomCat].anims.size();
+        if (numAnims > 0) {
+            int randomAnim = juce::Random::getSystemRandom().nextInt(numAnims);
+            animationBox.setSelectedId(randomAnim + 1, juce::sendNotificationSync);
+        }
+    };
+
     // 4. RATE KNOB
     addAndMakeVisible(speedLabel); 
     speedLabel.setText("Rate", juce::dontSendNotification);
@@ -248,6 +272,7 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
 }
 
 SquabDanceAudioProcessorEditor::~SquabDanceAudioProcessorEditor() { 
+    
     stopTimer(); 
     speedSlider.setLookAndFeel(nullptr);
     syncSlider.setLookAndFeel(nullptr);
@@ -256,6 +281,8 @@ SquabDanceAudioProcessorEditor::~SquabDanceAudioProcessorEditor() {
     dynamicSlider.setLookAndFeel(nullptr);
     hueSlider.setLookAndFeel(nullptr);
     panningSlider.setLookAndFeel(nullptr);
+
+    randomButton.setLookAndFeel(nullptr);
 
     spriteWindow = nullptr; 
 }
@@ -344,7 +371,7 @@ void SquabDanceAudioProcessorEditor::paint (juce::Graphics& g) {
 }
 
 void SquabDanceAudioProcessorEditor::resized() {
-    // --- GLOBAL MARGINS & GRID ---
+    // --- GLOBAL MARGINS & GRID (Restoring the 2x2 layout) ---
     int margin = 30;
     int colWidth = 330; 
     
@@ -352,7 +379,7 @@ void SquabDanceAudioProcessorEditor::resized() {
     int rightColX = getWidth() - margin - colWidth; 
     
     int topRowY = margin;
-    int botRowY = 260; 
+    int botRowY = 270; 
 
     // ==========================================
     // TOP LEFT: Branding & Sprite
@@ -362,12 +389,18 @@ void SquabDanceAudioProcessorEditor::resized() {
     mirrorButton.setBounds(leftColX, topRowY + 170, colWidth, 25);
 
     // ==========================================
-    // TOP RIGHT: Settings & Speed
+    // TOP RIGHT: Settings, Random Button & Speed
     // ==========================================
-    categoryBox.setBounds(rightColX, topRowY + 20, colWidth, 24);
-    animationBox.setBounds(rightColX, topRowY + 70, colWidth, 24);
+    // Increased vertical offsets to give the attached labels breathing room
+    categoryBox.setBounds(rightColX, topRowY + 15, colWidth, 24);
+    animationBox.setBounds(rightColX, topRowY + 65, colWidth, 24);
+    
+    // The Pill Button slots below the animations
+    randomButton.setBounds(rightColX, topRowY + 105, colWidth, 24); 
 
-    int topKnobY = topRowY + 115;
+    // Knobs sit perfectly below the button and right above the bottom row limit (260)
+    int topKnobY = topRowY + 135;
+    
     scaleLabel.setBounds(rightColX + 10, topKnobY, 60, 20); 
     scaleSlider.setBounds(rightColX + 10, topKnobY + 20, 60, 75); 
 
@@ -378,11 +411,9 @@ void SquabDanceAudioProcessorEditor::resized() {
     int btnX = rightColX + 180;
     int btnY = topKnobY + 25;
     hzButton.setBounds(btnX, btnY, 40, 20);
-    // Pushed right by changing the offset from +45 to +55
     openButton.setBounds(btnX + 55, btnY, 60, 20); 
     syncButton.setBounds(btnX, btnY + 25, 40, 20);
-    // Pushed right by changing the offset from +45 to +55
-    resetButton.setBounds(btnX + 55, btnY + 25, 60, 20); 
+    resetButton.setBounds(btnX + 55, btnY + 25, 60, 20);
 
     // ==========================================
     // BOTTOM LEFT: Audio Reactivity
@@ -418,10 +449,8 @@ void SquabDanceAudioProcessorEditor::resized() {
     // ==========================================
     // SQUAB DAD SIGNATURE
     // ==========================================
-    // X Coordinate dynamically locks to the exact right edge of the manipulation box above it
     squabDadLabel.setBounds(rightColX + colWidth - 100, botKnobY + 100, 100, 20);
 }
-
 
 void SquabDanceAudioProcessorEditor::preCacheImages() {
     cachedSprites.clear();

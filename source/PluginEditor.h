@@ -44,6 +44,29 @@ public:
         g.setColour(juce::Colours::white);
         g.fillEllipse(thumbPoint.x - thumbWidth / 2.0f, thumbPoint.y - thumbWidth / 2.0f, thumbWidth, thumbWidth);
     }
+
+    void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
+                               bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat();
+        auto cornerSize = bounds.getHeight() * 0.5f; // perfect pill shape!
+        
+        juce::Path path;
+        path.addRoundedRectangle(bounds, cornerSize);
+        
+        juce::Colour baseColour = backgroundColour;
+        if (shouldDrawButtonAsDown)      baseColour = baseColour.darker(0.15f); // Deep color when pressed
+        else if (shouldDrawButtonAsHighlighted) baseColour = baseColour.brighter(0.05f); // subtle glow on hover
+
+        // 1. Fill the main body with base color
+        g.setColour(baseColour);
+        g.fillPath(path);
+        
+        // 2. Strong Outer Outline
+        g.setColour(juce::Colours::black.withAlpha(0.4f));
+        g.strokePath(path, juce::PathStrokeType(1.5f));
+    }
+
 };
 
 class SquabDanceAudioProcessorEditor : public juce::AudioProcessorEditor,
@@ -70,6 +93,8 @@ private:
     juce::Label catLabel;
     juce::ComboBox animationBox;
     juce::Label animLabel;
+
+    juce::TextButton randomButton;
 
     juce::Slider speedSlider;
     juce::Label speedLabel;
