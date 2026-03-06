@@ -54,15 +54,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
 
     // --- AUDIO REACTIVITY ---
     layout.add(std::make_unique<juce::AudioParameterBool>("audio_react", "Audio Reactivity", false));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("react_intensity", "Intensity", 0.0f, 100.0f, 100.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("react_color", "Color", 0.0f, 100.0f, 100.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("react_pump", "Pump", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("react_intensity", "Intensity", 0.0f, 100.0f, 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("react_color", "Color", 0.0f, 100.0f, 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("react_pump", "Pump", 0.0f, 100.0f, 0.0f));
 
     // --- AUDIO MANIPULATION (NEW) ---
     layout.add(std::make_unique<juce::AudioParameterBool>("audio_manip", "Audio Manipulation", false));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_dynamic", "Dynamic", 0.0f, 100.0f, 100.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_hue", "Hue Analysis", 0.0f, 100.0f, 100.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_pan", "Panning", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_dynamic", "Dynamic", 0.0f, 100.0f, 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_hue", "Hue Analysis", 0.0f, 100.0f, 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_pan", "Panning", 0.0f, 100.0f, 0.0f));
 
 
     return layout;

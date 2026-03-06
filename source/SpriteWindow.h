@@ -106,6 +106,38 @@ public:
             int drawSourceX = sx;
             int drawSourceY = sy;
 
+            
+            // --- FAST PIXEL HUE/SATURATION ENGINE ---
+            if (audioReactOn && audioLevel > 0.001f && (reactColor > 0.0f || reactIntensity > 0.0f)) {
+                frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
+                {
+                    juce::Graphics gFrame(frameBuffer);
+                    gFrame.drawImage(currentImg, 0, 0, 220, 256, sx, sy, 220, 256);
+                }
+
+                juce::Image::BitmapData data(frameBuffer, juce::Image::BitmapData::readWrite);
+                float hueShift = audioLevel * (reactColor / 100.0f);
+                float intensityFactor = audioLevel * (reactIntensity / 100.0f);
+                float satBoost = intensityFactor * 2.0f; 
+                float brightBoost = intensityFactor * 0.6f; 
+            
+                for (int y = 0; y < 256; ++y) {
+                    for (int x = 0; x < 220; ++x) {
+                        juce::Colour c = data.getPixelColour(x, y);
+                        if (c.getAlpha() > 0) {
+                            data.setPixelColour(x, y, juce::Colour::fromHSV(
+                                std::fmod(c.getHue() + hueShift, 1.0f),
+                                juce::jmin(1.0f, c.getSaturation() * (1.0f + satBoost)), 
+                                juce::jmin(1.0f, c.getBrightness() + brightBoost),       
+                                c.getFloatAlpha()
+                            ));
+                        }
+                    }
+                }
+                sourceToDraw = frameBuffer; 
+                drawSourceX = 0; drawSourceY = 0;
+            }
+
             // ========================================================
             // --- TRUE PIXEL-DELTA SENSOR ENGINE ---
             // ========================================================
@@ -156,36 +188,6 @@ public:
             }
             // ========================================================
 
-            // --- FAST PIXEL HUE/SATURATION ENGINE ---
-            if (audioReactOn && audioLevel > 0.001f && (reactColor > 0.0f || reactIntensity > 0.0f)) {
-                frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
-                {
-                    juce::Graphics gFrame(frameBuffer);
-                    gFrame.drawImage(currentImg, 0, 0, 220, 256, sx, sy, 220, 256);
-                }
-
-                juce::Image::BitmapData data(frameBuffer, juce::Image::BitmapData::readWrite);
-                float hueShift = audioLevel * (reactColor / 100.0f);
-                float intensityFactor = audioLevel * (reactIntensity / 100.0f);
-                float satBoost = intensityFactor * 2.0f; 
-                float brightBoost = intensityFactor * 0.6f; 
-            
-                for (int y = 0; y < 256; ++y) {
-                    for (int x = 0; x < 220; ++x) {
-                        juce::Colour c = data.getPixelColour(x, y);
-                        if (c.getAlpha() > 0) {
-                            data.setPixelColour(x, y, juce::Colour::fromHSV(
-                                std::fmod(c.getHue() + hueShift, 1.0f),
-                                juce::jmin(1.0f, c.getSaturation() * (1.0f + satBoost)), 
-                                juce::jmin(1.0f, c.getBrightness() + brightBoost),       
-                                c.getFloatAlpha()
-                            ));
-                        }
-                    }
-                }
-                sourceToDraw = frameBuffer; 
-                drawSourceX = 0; drawSourceY = 0;
-            }
 
             g.setOpacity(1.0f); 
             g.drawImage(sourceToDraw, destX, destY, destW, destH, drawSourceX, drawSourceY, 220, 256); 
