@@ -58,13 +58,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
     layout.add(std::make_unique<juce::AudioParameterFloat>("react_color", "Color", 0.0f, 100.0f, 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>("react_pump", "Pump", 0.0f, 100.0f, 0.0f));
 
-    // --- AUDIO MANIPULATION (NEW) ---
+    // --- AUDIO MANIPULATION ---
     layout.add(std::make_unique<juce::AudioParameterBool>("audio_manip", "Audio Manipulation", false));
     layout.add(std::make_unique<juce::AudioParameterFloat>("manip_dynamic", "Dynamic", 0.0f, 100.0f, 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>("manip_hue", "Hue Analysis", 0.0f, 100.0f, 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>("manip_pan", "Panning", 0.0f, 100.0f, 0.0f));
 
-
+    // --- SATURATION TYPE  ---
+    juce::StringArray saturationOptions = { "Wavefolder", "Soft Clip", "Hard Clip", "Bitcrusher" };
+    layout.add(std::make_unique<juce::AudioParameterChoice>("sat_type", "Saturation Type", saturationOptions, 0));
     return layout;
 }
 
@@ -126,7 +128,7 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     currentAudioLevel.store(juce::jmin(1.0f, smoothedLevel), std::memory_order_relaxed);
 
 
-    // ========================================================
+// ========================================================
     // --- OPTIMIZED AUDIO MANIPULATION ENGINE
     // ========================================================
     bool manipOn = *apvts.getRawParameterValue("audio_manip") > 0.5f;
@@ -147,6 +149,9 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
         // Constants for HRTF Math
         float maxItdSamples = 0.00075f * getSampleRate(); // 0.75ms max wrap-around delay for human head
+        
+        // Grab the current mode OUTSIDE the loop for better CPU performance
+        int satType = (int)*apvts.getRawParameterValue("sat_type");
 
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
             
@@ -167,10 +172,28 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
             for (int channel = 0; channel < totalNumInputChannels; ++channel) {
                 float cleanSig = buffer.getReadPointer(channel)[sample];
 
-                // A. SINE WAVEFOLDER
+                // A. SATURATION / DISTORTION ENGINE
                 if (dynamicAmt > 0.01f) {
                     float pushedSig = cleanSig * drive;
-                    cleanSig = std::sin(pushedSig) * 0.7f; 
+                    
+                    switch (satType) {
+                        case 0: // Wavefolder (Aggressive, metallic phase-flipping)
+                            cleanSig = std::sin(pushedSig) * 0.7f; 
+                            break;
+                            
+                        case 1: // Soft Clip (Warm, analog-style tube saturation)
+                            cleanSig = std::tanh(pushedSig) * 0.8f;
+                            break;
+                            
+                        case 2: // Hard Clip (Harsh, digital fuzz)
+                            cleanSig = juce::jlimit(-0.8f, 0.8f, pushedSig);
+                            break;
+                            
+                        case 3: // Bitcrusher (Resolution drops as motion increases)
+                            float res = std::pow(2.0f, 2.0f + (1.0f - smoothMotion) * 10.0f);
+                            cleanSig = std::round(pushedSig * res) / res;
+                            break;
+                    }
                 }
 
                 // B. HUE COMB FILTER
@@ -236,9 +259,10 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
-}
+} 
 
 bool SquabDanceAudioProcessor::hasEditor() const { return true; }
+
 juce::AudioProcessorEditor* SquabDanceAudioProcessor::createEditor()
 {
     return new SquabDanceAudioProcessorEditor (*this);

@@ -259,6 +259,12 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     setupReactKnob(hueSlider, hueLabel, "Hue Analysis", "manip_hue", hueAttachment);
     setupReactKnob(panningSlider, panningLabel, "Panning", "manip_pan", panningAttachment);
 
+    // --- INITIALIZE SATURATION DROPDOWN ---
+    addAndMakeVisible(satTypeBox);
+    satTypeBox.addItemList({ "Wavefolder", "Soft Clip", "Hard Clip", "Bitcrusher" }, 1);
+    satTypeBox.setJustificationType(juce::Justification::centred);
+    satTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "sat_type", satTypeBox);
+
     // 6. WINDOW INIT
     spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
     
@@ -439,6 +445,9 @@ void SquabDanceAudioProcessorEditor::resized() {
     
     dynamicLabel.setBounds(rightColX + 25, botKnobY, 60, 20);
     dynamicSlider.setBounds(rightColX + 25, botKnobY + 20, 60, 75);
+    
+    // NEW: Centered perfectly under the Dynamic Slider
+    satTypeBox.setBounds(rightColX + 15, botKnobY + 95, 80, 20);
     
     hueLabel.setBounds(rightColX + 135, botKnobY, 60, 20);
     hueSlider.setBounds(rightColX + 135, botKnobY + 20, 60, 75);

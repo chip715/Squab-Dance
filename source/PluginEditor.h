@@ -145,6 +145,9 @@ private:
     juce::Slider panningSlider;
     juce::Label panningLabel;
 
+    juce::ComboBox satTypeBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> satTypeAttachment;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> manipAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dynamicAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> hueAttachment;
