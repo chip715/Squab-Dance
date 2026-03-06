@@ -161,34 +161,42 @@ public:
             // Draw the main character mapped to our custom pumped rectangle
             g.drawImage(sourceToDraw, destX, destY, destW, destH, drawSourceX, drawSourceY, 220, 256); 
             
-            // --- REFLECTION ---
+           // --- REFLECTION ---
             if (mirror) {
                 if (sourceToDraw != frameBuffer) {
                     frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
-                    juce::Graphics gFrame(frameBuffer);
-                    gFrame.drawImage(sourceToDraw, 0, 0, 220, 256, drawSourceX, drawSourceY, 220, 256);
+                    // SCOPE 1: Lock the graphics context, draw, and immediately release it
+                    {
+                        juce::Graphics gFrame(frameBuffer);
+                        gFrame.drawImage(sourceToDraw, 0, 0, 220, 256, drawSourceX, drawSourceY, 220, 256);
+                    }
                 }
 
                 reflectionBuffer.clear(reflectionBuffer.getBounds(), juce::Colours::transparentBlack);
-                juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
-                juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
+                
+                // SCOPE 2: Lock CPU memory to read/write pixels, and release before drawing!
+                {
+                    juce::Image::BitmapData srcData(frameBuffer, juce::Image::BitmapData::readOnly);
+                    juce::Image::BitmapData destData(reflectionBuffer, juce::Image::BitmapData::writeOnly);
 
-                int fadeEnd = 100; 
-                for (int y = 0; y < 256; ++y) {
-                    if (y >= fadeEnd) break; 
-                    int flippedY = 255 - y; 
-                    float progress = (float)y / (float)fadeEnd;
-                    float curve = (1.0f - progress) * (1.0f - progress); 
-                    float alphaMod = 0.45f * curve; 
+                    int fadeEnd = 100; 
+                    for (int y = 0; y < 256; ++y) {
+                        if (y >= fadeEnd) break; 
+                        int flippedY = 255 - y; 
+                        float progress = (float)y / (float)fadeEnd;
+                        float curve = (1.0f - progress) * (1.0f - progress); 
+                        float alphaMod = 0.45f * curve; 
 
-                    for (int x = 0; x < 220; ++x) {
-                        juce::Colour c = srcData.getPixelColour(x, flippedY);
-                        if (c.getAlpha() > 0) {
-                            destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
+                        for (int x = 0; x < 220; ++x) {
+                            juce::Colour c = srcData.getPixelColour(x, flippedY);
+                            if (c.getAlpha() > 0) {
+                                destData.setPixelColour(x, y, c.withMultipliedAlpha(alphaMod));
+                            }
                         }
                     }
-                }
-                // Stretch the reflection DOWN from the new 380px floor so it perfectly matches the pumped feet!
+                } // <-- The locks are released right here!
+                
+                // Now the GPU is free to safely render the buffer
                 g.drawImage(reflectionBuffer, destX, 380.0f, destW, destH, 0, 0, 220, 256);
             }
         }
