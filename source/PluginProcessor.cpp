@@ -78,7 +78,13 @@ int SquabDanceAudioProcessor::getCurrentProgram() { return 0; }
 void SquabDanceAudioProcessor::setCurrentProgram (int index) {}
 const juce::String SquabDanceAudioProcessor::getProgramName (int index) { return {}; }
 void SquabDanceAudioProcessor::changeProgramName (int index, const juce::String& newName) {}
-void SquabDanceAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock) {}
+
+void SquabDanceAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock) {
+delayBuffer.setSize(getTotalNumOutputChannels(), (int)(sampleRate * 0.1) + 1);
+    delayBuffer.clear();
+    delayWritePosition = 0;
+}
+
 void SquabDanceAudioProcessor::releaseResources() {}
 
 void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -87,7 +93,6 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // --- OPTIMIZED PLAYHEAD FETCH ---
     if (auto* ph = getPlayHead()) {
         if (auto pos = ph->getPosition()) { 
             currentBpm.store(pos->getBpm().orFallback(120.0), std::memory_order_relaxed);
@@ -100,29 +105,115 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     float rms = 0.0f;
     for (int channel = 0; channel < totalNumInputChannels; ++channel) {
         auto* readPointer = buffer.getReadPointer(channel);
-        for (int i = 0; i < buffer.getNumSamples(); ++i) {
-            rms += readPointer[i] * readPointer[i];
-        }
+        for (int i = 0; i < buffer.getNumSamples(); ++i) rms += readPointer[i] * readPointer[i];
     }
-    
-    // DRAMATIC BOOST: Scaled to 10.0x for aggressive visual response
+
     rms = std::sqrt(rms / (totalNumInputChannels * buffer.getNumSamples() + 1e-6f)) * 10.0f;
-    
-    // ROCK SOLID ENVELOPE: Eliminates the visual trembling
+
     float prevLevel = currentAudioLevel.load(std::memory_order_relaxed);
+
     float smoothedLevel = prevLevel;
-    
-    if (rms > prevLevel) {
-        // Fast Attack (Punches instantly on the drum hit)
-        smoothedLevel = prevLevel + 0.4f * (rms - prevLevel); 
-    } else {
-        // Slow Release (Glides smoothly down, ignoring wave ripple)
-        smoothedLevel = prevLevel + 0.08f * (rms - prevLevel); 
-    }
-    
+    if (rms > prevLevel) smoothedLevel = prevLevel + 0.4f * (rms - prevLevel); 
+    else smoothedLevel = prevLevel + 0.08f * (rms - prevLevel); 
     currentAudioLevel.store(juce::jmin(1.0f, smoothedLevel), std::memory_order_relaxed);
 
-    // Audio pass-through (silence cleanup)
+
+    // ========================================================
+    // --- OPTIMIZED AUDIO MANIPULATION ENGINE
+    // ========================================================
+    bool manipOn = *apvts.getRawParameterValue("audio_manip") > 0.5f;
+    float dynamicAmt = *apvts.getRawParameterValue("manip_dynamic") / 100.0f; 
+    float hueAmt = *apvts.getRawParameterValue("manip_hue") / 100.0f;
+    float panAmt = *apvts.getRawParameterValue("manip_pan") / 100.0f;
+
+    float motion = visualMotion.load(std::memory_order_relaxed);
+    float hue = visualHue.load(std::memory_order_relaxed);
+    float pan = visualPan.load(std::memory_order_relaxed);
+
+    // --- TRUE 1-SECOND TIMER (Fixed!) ---
+    static int sampleCounter = 0;
+    sampleCounter += buffer.getNumSamples(); // Accurately counts samples instead of blocks
+    bool shouldPrintDebug = false;
+    
+    if (sampleCounter >= 44100) { 
+        shouldPrintDebug = true;
+        sampleCounter = 0; // Reset timer
+        
+        DBG("=========================================");
+        DBG("3A. DSP CHECK | ManipOn: " << (manipOn ? "YES" : "NO"));
+        DBG("3B. KNOBS   | Dyn: " << dynamicAmt << " | Hue: " << hueAmt << " | Pan: " << panAmt);
+        DBG("3C. SENSORS | Motion: " << motion << " | Hue: " << hue << " | Pan: " << pan);
+    }
+
+    if (manipOn && (dynamicAmt > 0.01f || hueAmt > 0.01f || panAmt > 0.01f)) {
+
+        // 1. SINE WAVEFOLDER MATH
+        float drive = 1.0f + (motion * dynamicAmt * 40.0f); 
+        
+        if (shouldPrintDebug) {
+            DBG("3D. ENGINE  | Wavefolder Drive Multiplier: " << drive);
+            // Let's test the math on a fake audio signal of 0.5 volume
+            float testSig = std::sin((0.5f * drive)) * 0.7f;
+            DBG("3E. MATH    | Fake Input: 0.50 -> Mangled Output: " << testSig);
+        }
+
+        // 2. PANNING MATH
+        float centeredPan = 0.5f + ((pan - 0.5f) * panAmt);
+        float leftGain = std::cos(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
+        float rightGain = std::sin(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
+
+        // 3. COMB FILTER / FLANGER MATH
+        float delayMs = 0.5f + (hue * 10.0f * hueAmt); 
+        int delaySamples = (int)(delayMs * getSampleRate() / 1000.0f);
+        if (delaySamples < 1) delaySamples = 1;
+        int delayBufferSize = delayBuffer.getNumSamples();
+
+        for (int channel = 0; channel < totalNumInputChannels; ++channel) {
+            auto* channelData = buffer.getWritePointer(channel);
+            auto* delayData = delayBufferSize > 0 ? delayBuffer.getWritePointer(channel % delayBuffer.getNumChannels()) : nullptr;
+            
+            int tempDelayPos = delayWritePosition;
+
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
+                float cleanSig = channelData[sample];
+
+                // A. SINE WAVEFOLDER
+                if (dynamicAmt > 0.01f) {
+                    float pushedSig = cleanSig * drive;
+                    cleanSig = std::sin(pushedSig) * 0.7f; 
+                }
+
+                // B. HUE COMB FILTER
+                if (hueAmt > 0.01f && delayData != nullptr) {
+                    int readPos = tempDelayPos - delaySamples;
+                    if (readPos < 0) readPos += delayBufferSize;
+                    
+                    float delayedSig = delayData[readPos];
+                    delayData[tempDelayPos] = cleanSig + (delayedSig * 0.6f); 
+                    cleanSig = (cleanSig * 0.5f) + (delayedSig * 0.5f);
+                    
+                    tempDelayPos++;
+                    if (tempDelayPos >= delayBufferSize) tempDelayPos = 0;
+                }
+
+                // C. AUTO-PANNER
+                if (panAmt > 0.01f && totalNumInputChannels == 2) {
+                    if (channel == 0) cleanSig *= leftGain;
+                    if (channel == 1) cleanSig *= rightGain;
+                }
+
+                channelData[sample] = cleanSig;
+            }
+        }
+        
+        if (hueAmt > 0.01f && delayBufferSize > 0) {
+            delayWritePosition = (delayWritePosition + buffer.getNumSamples()) % delayBufferSize;
+        }
+
+    } else {
+        delayBuffer.clear(); 
+    }
+
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 }

@@ -38,7 +38,17 @@ public:
     std::atomic<bool> isPlaying { false };
     std::atomic<float> currentAudioLevel { 0.0f };
 
+    // --- VISUAL ANALYSIS SENSORS ---
+    std::atomic<float> visualMotion { 0.0f }; // 0.0 to 1.0
+    std::atomic<float> visualHue { 0.0f };    // 0.0 to 1.0
+    std::atomic<float> visualPan { 0.5f };    // 0.0 to 1.0
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    
+    // --- NEW: FLANGER / DELAY MEMORY ---
+    juce::AudioBuffer<float> delayBuffer;
+    int delayWritePosition = 0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SquabDanceAudioProcessor)
 };

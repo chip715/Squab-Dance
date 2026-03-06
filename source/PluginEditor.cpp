@@ -223,6 +223,8 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     manipButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF7CB9E8)); 
     manipButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
     
+    manipAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "audio_manip", manipButton);
+
     manipButton.onClick = [this] {
     manipButton.setButtonText(manipButton.getToggleState() ? "Audio Manipulation On" : "Audio Manipulation Off");
     };
@@ -281,6 +283,18 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
     if (spriteWindow == nullptr || spriteWindow->getContent() == nullptr) return;
 
     spriteWindow->getContent()->updateSync(isSync, syncBeatLengths[syncIdx], audioProcessor.currentPpq.load(), audioProcessor.isPlaying.load());
+
+    audioProcessor.visualMotion.store(spriteWindow->getContent()->getMotion(), std::memory_order_relaxed);
+    audioProcessor.visualHue.store(spriteWindow->getContent()->getHue(), std::memory_order_relaxed);
+    audioProcessor.visualPan.store(spriteWindow->getContent()->getPan(), std::memory_order_relaxed);
+
+    // --- DEBUG: PRINT ONCE PER SECOND ---
+    static int debugTick = 0;
+    if (++debugTick % 30 == 0) {
+        float dyn = *audioProcessor.apvts.getRawParameterValue("manip_dynamic");
+        float mot = audioProcessor.visualMotion.load();
+        DBG("1. BRIDGE Check | Dynamic Knob: " << dyn << " | Visual Motion: " << mot);
+    }
 
     float speed = *audioProcessor.apvts.getRawParameterValue("speed");
     bool mir = *audioProcessor.apvts.getRawParameterValue("mirror") > 0.5f;

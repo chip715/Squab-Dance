@@ -24,9 +24,10 @@ juce_add_plugin(SquabDance
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE
+    VST3_COPY_DIR "C:/Users/yeon7/AppData/Local/Programs/Common/VST3" #just for testing
     FORMATS VST3 Standalone   # No VST2 here
     PLUGIN_CODE "SqDa" 
-    VST2_ID "SqDa"            # Still needed for the UID math
+    VST2_ID "SqDa"
 )
 
 # 3. Link the Source Files
