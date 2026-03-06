@@ -109,6 +109,22 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> syncAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> scaleAttachment;
 
+    // --- AUDIO MANIPULATION UI ---
+    juce::Label manipTitleLabel;
+    juce::TextButton manipButton;
+    
+    juce::Slider dynamicSlider;
+    juce::Label dynamicLabel;
+    juce::Slider hueSlider;
+    juce::Label hueLabel;
+    juce::Slider panningSlider;
+    juce::Label panningLabel;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> manipAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dynamicAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> hueAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> panningAttachment;
+
     
 
     std::vector<CharacterDef> characterDB;

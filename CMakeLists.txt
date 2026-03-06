@@ -23,6 +23,7 @@ juce_add_plugin(SquabDance
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    COPY_PLUGIN_AFTER_BUILD TRUE
     FORMATS VST3 Standalone   # No VST2 here
     PLUGIN_CODE "SqDa" 
     VST2_ID "SqDa"            # Still needed for the UID math

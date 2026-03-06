@@ -58,6 +58,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
     layout.add(std::make_unique<juce::AudioParameterFloat>("react_color", "Color", 0.0f, 100.0f, 100.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>("react_pump", "Pump", 0.0f, 100.0f, 100.0f));
 
+    // --- AUDIO MANIPULATION (NEW) ---
+    layout.add(std::make_unique<juce::AudioParameterBool>("audio_manip", "Audio Manipulation", false));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_dynamic", "Dynamic", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_hue", "Hue Analysis", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("manip_pan", "Panning", 0.0f, 100.0f, 100.0f));
+
 
     return layout;
 }
@@ -111,7 +117,7 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         smoothedLevel = prevLevel + 0.4f * (rms - prevLevel); 
     } else {
         // Slow Release (Glides smoothly down, ignoring wave ripple)
-        smoothedLevel = prevLevel + 0.015f * (rms - prevLevel); 
+        smoothedLevel = prevLevel + 0.08f * (rms - prevLevel); 
     }
     
     currentAudioLevel.store(juce::jmin(1.0f, smoothedLevel), std::memory_order_relaxed);

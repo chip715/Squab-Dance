@@ -6,7 +6,8 @@ class SpriteContent : public juce::Component, public juce::Timer
 {
 public:
     SpriteContent() { 
-        setSize(220, 512); 
+        // THE FIX: Expanded canvas to 320x760 so the pump never clips the top!
+        setSize(320, 760); 
         frameBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         reflectionBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         startTimerHz(30); 
@@ -22,13 +23,10 @@ public:
         }
     }
     
-    // --- REPLACED SINGLE IMAGE WITH DATA SETTER ---
     void setSpriteData(bool isGrid, const std::vector<AnimationDef>& anims, const std::vector<juce::Image>& imgs) {
         isGridSprite = isGrid;
         currentAnims = anims;
         spriteSheets = imgs;
-        
-        // Use this to ensure the UI updates immediately
         juce::MessageManager::callAsync([this]() { repaint(); });
     }
     
@@ -52,7 +50,6 @@ public:
 
         if (isSyncMode) {
             if (isPlaying && currentBeatLength > 0.0) {
-                // Determine which frame we should be on based on the musical playhead
                 int newFrame = static_cast<int>(currentPpq / currentBeatLength) % activeFrames;
                 if (newFrame < 0) newFrame += activeFrames; 
                 
@@ -62,7 +59,6 @@ public:
                 }
             }
         } else {
-            // Standard Hz Free-Running Logic
             currentFrame = (currentFrame + 1) % activeFrames;
             repaint();
         }
@@ -76,7 +72,7 @@ public:
         return offset;
     }
 
-void paint(juce::Graphics& g) override {
+    void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colours::transparentBlack);
         
         if (spriteSheets.empty()) return;
@@ -103,7 +99,7 @@ void paint(juce::Graphics& g) override {
             sheetIndex = 0;
         }
 
-        // --- NEW EXPLICIT BOUNDS MATH (Fixes all jitter and anchor issues!) ---
+        // --- NEW EXPLICIT BOUNDS MATH (Fixes all jitter and clipping issues!) ---
         float pScale = 1.0f;
         if (audioReactOn && audioLevel > 0.001f && reactPump > 0.0f) {
             pScale += (audioLevel * (reactPump / 100.0f) * 0.45f); 
@@ -113,10 +109,10 @@ void paint(juce::Graphics& g) override {
         float destW = 220.0f * pScale;
         float destH = 256.0f * pScale;
         
-        // Anchor X to the exact horizontal center
-        float destX = 110.0f - (destW * 0.5f);
-        // Anchor Y so the bottom edge ALWAYS touches the 256px floor line
-        float destY = 256.0f - destH;
+        // Anchor X to the exact horizontal center of the new 320px width
+        float destX = 160.0f - (destW * 0.5f);
+        // Anchor Y so the bottom edge ALWAYS touches the new 380px floor line
+        float destY = 380.0f - destH;
 
         // --- RENDERING ---
         if (sheetIndex < (int)spriteSheets.size() && spriteSheets[sheetIndex].isValid()) {
@@ -136,20 +132,26 @@ void paint(juce::Graphics& g) override {
 
                 juce::Image::BitmapData data(frameBuffer, juce::Image::BitmapData::readWrite);
                 float hueShift = audioLevel * (reactColor / 100.0f);
-                float satBoost = audioLevel * (reactIntensity / 100.0f) * 3.0f;
                 
+                // NEW INTENSITY MATH: Flash the brightness and multiply saturation!
+                float intensityFactor = audioLevel * (reactIntensity / 100.0f);
+                float satBoost = intensityFactor * 2.0f; 
+                float brightBoost = intensityFactor * 0.6f; 
+            
                 for (int y = 0; y < 256; ++y) {
                     for (int x = 0; x < 220; ++x) {
                         juce::Colour c = data.getPixelColour(x, y);
                         if (c.getAlpha() > 0) {
                             data.setPixelColour(x, y, juce::Colour::fromHSV(
                                 std::fmod(c.getHue() + hueShift, 1.0f),
-                                juce::jmin(1.0f, c.getSaturation() + satBoost),
-                                c.getBrightness(), c.getFloatAlpha()
+                                juce::jmin(1.0f, c.getSaturation() * (1.0f + satBoost)), 
+                                juce::jmin(1.0f, c.getBrightness() + brightBoost),       
+                                c.getFloatAlpha()
                             ));
                         }
                     }
                 }
+            
                 sourceToDraw = frameBuffer; 
                 drawSourceX = 0;
                 drawSourceY = 0;
@@ -186,8 +188,8 @@ void paint(juce::Graphics& g) override {
                         }
                     }
                 }
-                // Stretch the reflection DOWN into the floor so it perfectly matches the pumped feet!
-                g.drawImage(reflectionBuffer, destX, 256.0f, destW, destH, 0, 0, 220, 256);
+                // Stretch the reflection DOWN from the new 380px floor so it perfectly matches the pumped feet!
+                g.drawImage(reflectionBuffer, destX, 380.0f, destW, destH, 0, 0, 220, 256);
             }
         }
     }
@@ -209,7 +211,6 @@ void paint(juce::Graphics& g) override {
     void updateSync(bool synced, double beatLength, double ppq, bool playing) {
         if (isSyncMode != synced) {
             isSyncMode = synced;
-            // Run at a fast 60Hz lock to ensure the UI catches the PPQ smoothly
             if (isSyncMode) startTimerHz(60); 
             else startTimerHz(currentHz);
         }
@@ -218,23 +219,23 @@ void paint(juce::Graphics& g) override {
         isPlaying = playing;
     }
 
-void setScale(float newScale) {
+    void setScale(float newScale) {
         newScale = juce::jmax(0.1f, newScale); 
         if (currentScale != newScale) {
             currentScale = newScale;
             if (auto* win = findParentComponentOfClass<juce::DocumentWindow>()) {
-                int newW = juce::roundToInt(220 * currentScale);
-                int newH = juce::roundToInt(512 * currentScale);
+                // Update to match new expanded canvas ratios
+                int newW = juce::roundToInt(320 * currentScale);
+                int newH = juce::roundToInt(760 * currentScale);
                 
-                // THE FIX: This forces the OS window to expand equally from its current center point!
-                auto bounds = win->getBounds();
-                win->setBounds(bounds.withSizeKeepingCentre(newW, newH));
+                // FIXED JITTER: Standard setSize prevents fighting with the mouse drag
+                win->setSize(newW, newH);
             }
             repaint();
         }
     }
 
-void updateAudioReact(bool on, float intensity, float color, float pump, float level) {
+    void updateAudioReact(bool on, float intensity, float color, float pump, float level) {
         audioReactOn = on; reactIntensity = intensity; reactColor = color; reactPump = pump; audioLevel = level;
     }
 
@@ -282,7 +283,9 @@ public:
 
         content = std::make_unique<SpriteContent>();
         setContentNonOwned(content.get(), true);
-        centreWithSize(220, 512); 
+        
+        // MATCH NEW CANVAS SIZE HERE
+        centreWithSize(320, 760); 
         setVisible(true);
     }
     

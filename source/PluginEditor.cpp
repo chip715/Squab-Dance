@@ -7,7 +7,7 @@ const int DEFAULT_CHARACTER_INDEX = 11;
 SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (760, 260); 
+    setSize (760, 520);
     characterDB = SpriteDatabase::getDatabase();
     preCacheImages();
 
@@ -209,6 +209,30 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     setupReactKnob(colorSlider, colorLabel, "Color", "react_color", colorAttachment);
     setupReactKnob(pumpSlider, pumpLabel, "Pump", "react_pump", pumpAttachment);
 
+   // --- AUDIO MANIPULATION INITIALIZATION ---
+    addAndMakeVisible(manipTitleLabel);
+    manipTitleLabel.setText("Audio Manipulation", juce::dontSendNotification);
+    manipTitleLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFAAAAAA));
+
+    addAndMakeVisible(manipButton);
+    manipButton.setClickingTogglesState(true);
+    manipButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A2A)); 
+    manipButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    
+    // UPDATED: Brighter, punchy blue color
+    manipButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF7CB9E8)); 
+    manipButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+    
+    manipButton.onClick = [this] {
+    manipButton.setButtonText(manipButton.getToggleState() ? "Audio Manipulation On" : "Audio Manipulation Off");
+    };
+    manipButton.setButtonText(*audioProcessor.apvts.getRawParameterValue("audio_manip") > 0.5f ? "Audio Manipulation On" : "Audio Manipulation Off");
+
+    // Reuse the lambda to setup the new knobs
+    setupReactKnob(dynamicSlider, dynamicLabel, "Dynamic", "manip_dynamic", dynamicAttachment);
+    setupReactKnob(hueSlider, hueLabel, "Hue Analysis", "manip_hue", hueAttachment);
+    setupReactKnob(panningSlider, panningLabel, "Panning", "manip_pan", panningAttachment);
+
     // 6. WINDOW INIT
     spriteWindow = std::make_unique<SpriteWindow>("Squab Visuals");
     
@@ -226,6 +250,11 @@ SquabDanceAudioProcessorEditor::~SquabDanceAudioProcessorEditor() {
     speedSlider.setLookAndFeel(nullptr);
     syncSlider.setLookAndFeel(nullptr);
     scaleSlider.setLookAndFeel(nullptr);
+
+    dynamicSlider.setLookAndFeel(nullptr);
+    hueSlider.setLookAndFeel(nullptr);
+    panningSlider.setLookAndFeel(nullptr);
+
     spriteWindow = nullptr; 
 }
 
@@ -301,57 +330,84 @@ void SquabDanceAudioProcessorEditor::paint (juce::Graphics& g) {
 }
 
 void SquabDanceAudioProcessorEditor::resized() {
-    // --- LEFT COLUMN ---
-    titleLabel.setBounds(20, 15, 200, 30);
-    birdLogo.setBounds(20, 50, 180, 130); 
+    // --- GLOBAL MARGINS & GRID ---
+    int margin = 30;
+    int colWidth = 330; 
     
-    // Exact baseline match
-    mirrorButton.setBounds(20, 205, 180, 20);
-
-    // --- RIGHT COLUMN ---
-    int rightCol = 230; 
+    int leftColX = margin;
+    int rightColX = getWidth() - margin - colWidth; 
     
-    categoryBox.setBounds(rightCol, 35, 205, 22);
-    animationBox.setBounds(rightCol, 85, 205, 22);
+    int topRowY = margin;
+    int botRowY = 260; 
 
-    // Scale Knob
-    scaleLabel.setBounds(rightCol, 130, 60, 20); 
-    scaleSlider.setBounds(rightCol, 150, 60, 75); 
+    // ==========================================
+    // TOP LEFT: Branding & Sprite
+    // ==========================================
+    titleLabel.setBounds(leftColX, topRowY, colWidth, 30);
+    birdLogo.setBounds(leftColX, topRowY + 30, colWidth, 130); 
+    mirrorButton.setBounds(leftColX, topRowY + 170, colWidth, 25);
 
-    // Rate / Sync Knob
-    speedLabel.setBounds(rightCol + 65, 130, 60, 20); 
-    speedSlider.setBounds(rightCol + 65, 150, 60, 75); 
-    syncSlider.setBounds(rightCol + 65, 150, 60, 75); 
+    // ==========================================
+    // TOP RIGHT: Settings & Speed
+    // ==========================================
+    categoryBox.setBounds(rightColX, topRowY + 20, colWidth, 24);
+    animationBox.setBounds(rightColX, topRowY + 70, colWidth, 24);
 
-    // Buttons
-    int btnX = rightCol + 135;
-    int btnY = 150;
-    hzButton.setBounds(btnX, btnY, 35, 20);
-    openButton.setBounds(btnX + 40, btnY, 50, 20);
+    int topKnobY = topRowY + 115;
+    scaleLabel.setBounds(rightColX + 10, topKnobY, 60, 20); 
+    scaleSlider.setBounds(rightColX + 10, topKnobY + 20, 60, 75); 
+
+    speedLabel.setBounds(rightColX + 90, topKnobY, 60, 20); 
+    speedSlider.setBounds(rightColX + 90, topKnobY + 20, 60, 75); 
+    syncSlider.setBounds(rightColX + 90, topKnobY + 20, 60, 75); 
+
+    int btnX = rightColX + 180;
+    int btnY = topKnobY + 25;
+    hzButton.setBounds(btnX, btnY, 40, 20);
+    // Pushed right by changing the offset from +45 to +55
+    openButton.setBounds(btnX + 55, btnY, 60, 20); 
+    syncButton.setBounds(btnX, btnY + 25, 40, 20);
+    // Pushed right by changing the offset from +45 to +55
+    resetButton.setBounds(btnX + 55, btnY + 25, 60, 20); 
+
+    // ==========================================
+    // BOTTOM LEFT: Audio Reactivity
+    // ==========================================
+    reactTitleLabel.setBounds(leftColX, botRowY, colWidth, 20);
+    reactButton.setBounds(leftColX, botRowY + 25, colWidth, 70);
     
-    syncButton.setBounds(btnX, btnY + 25, 35, 20);
-    resetButton.setBounds(btnX + 40, btnY + 25, 50, 20);
+    int botKnobY = botRowY + 110;
+    intensityLabel.setBounds(leftColX + 25, botKnobY, 60, 20);
+    intensitySlider.setBounds(leftColX + 25, botKnobY + 20, 60, 75);
+    
+    colorLabel.setBounds(leftColX + 135, botKnobY, 60, 20);
+    colorSlider.setBounds(leftColX + 135, botKnobY + 20, 60, 75);
+    
+    pumpLabel.setBounds(leftColX + 245, botKnobY, 60, 20);
+    pumpSlider.setBounds(leftColX + 245, botKnobY + 20, 60, 75);
 
-    // Exact baseline match
-    squabDadLabel.setBounds(btnX, 205, 100, 20);
+    // ==========================================
+    // BOTTOM RIGHT: Audio Manipulation
+    // ==========================================
+    manipTitleLabel.setBounds(rightColX, botRowY, colWidth, 20);
+    manipButton.setBounds(rightColX, botRowY + 25, colWidth, 70);
+    
+    dynamicLabel.setBounds(rightColX + 25, botKnobY, 60, 20);
+    dynamicSlider.setBounds(rightColX + 25, botKnobY + 20, 60, 75);
+    
+    hueLabel.setBounds(rightColX + 135, botKnobY, 60, 20);
+    hueSlider.setBounds(rightColX + 135, botKnobY + 20, 60, 75);
+    
+    panningLabel.setBounds(rightColX + 245, botKnobY, 60, 20);
+    panningSlider.setBounds(rightColX + 245, botKnobY + 20, 60, 75);
 
-    // --- REACTIVITY COLUMN ---
-    int reactCol = 480;
-    reactTitleLabel.setBounds(reactCol, 35, 150, 20);
-    reactButton.setBounds(reactCol, 60, 240, 60);
-    
-    int reactKnobY = 150;
-    intensityLabel.setBounds(reactCol, 130, 60, 20);
-    intensitySlider.setBounds(reactCol, reactKnobY, 60, 75);
-    
-    colorLabel.setBounds(reactCol + 90, 130, 60, 20);
-    colorSlider.setBounds(reactCol + 90, reactKnobY, 60, 75);
-    
-    pumpLabel.setBounds(reactCol + 180, 130, 60, 20);
-    pumpSlider.setBounds(reactCol + 180, reactKnobY, 60, 75);
+    // ==========================================
+    // SQUAB DAD SIGNATURE
+    // ==========================================
+    // X Coordinate dynamically locks to the exact right edge of the manipulation box above it
+    squabDadLabel.setBounds(rightColX + colWidth - 100, botKnobY + 100, 100, 20);
+}
 
-    
-} 
 
 void SquabDanceAudioProcessorEditor::preCacheImages() {
     cachedSprites.clear();
