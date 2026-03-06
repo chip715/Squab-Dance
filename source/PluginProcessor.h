@@ -50,5 +50,9 @@ private:
     juce::AudioBuffer<float> delayBuffer;
     int delayWritePosition = 0;
 
+    float smoothMotion = 0.0f;
+    float smoothHue = 0.0f;
+    float smoothPan = 0.5f;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SquabDanceAudioProcessor)
 };

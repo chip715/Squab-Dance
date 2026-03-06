@@ -126,56 +126,44 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     float hueAmt = *apvts.getRawParameterValue("manip_hue") / 100.0f;
     float panAmt = *apvts.getRawParameterValue("manip_pan") / 100.0f;
 
-    float motion = visualMotion.load(std::memory_order_relaxed);
-    float hue = visualHue.load(std::memory_order_relaxed);
-    float pan = visualPan.load(std::memory_order_relaxed);
-
-    // --- TRUE 1-SECOND TIMER (Fixed!) ---
-    static int sampleCounter = 0;
-    sampleCounter += buffer.getNumSamples(); // Accurately counts samples instead of blocks
-    bool shouldPrintDebug = false;
-    
-    if (sampleCounter >= 44100) { 
-        shouldPrintDebug = true;
-        sampleCounter = 0; // Reset timer
-        
-        DBG("=========================================");
-        DBG("3A. DSP CHECK | ManipOn: " << (manipOn ? "YES" : "NO"));
-        DBG("3B. KNOBS   | Dyn: " << dynamicAmt << " | Hue: " << hueAmt << " | Pan: " << panAmt);
-        DBG("3C. SENSORS | Motion: " << motion << " | Hue: " << hue << " | Pan: " << pan);
-    }
-
     if (manipOn && (dynamicAmt > 0.01f || hueAmt > 0.01f || panAmt > 0.01f)) {
 
-        // 1. SINE WAVEFOLDER MATH
-        float drive = 1.0f + (motion * dynamicAmt * 40.0f); 
-        
-        if (shouldPrintDebug) {
-            DBG("3D. ENGINE  | Wavefolder Drive Multiplier: " << drive);
-            // Let's test the math on a fake audio signal of 0.5 volume
-            float testSig = std::sin((0.5f * drive)) * 0.7f;
-            DBG("3E. MATH    | Fake Input: 0.50 -> Mangled Output: " << testSig);
-        }
+        // 1. Grab target values from the UI
+        float targetMotion = visualMotion.load(std::memory_order_relaxed);
+        float targetHue = visualHue.load(std::memory_order_relaxed);
+        float targetPan = visualPan.load(std::memory_order_relaxed);
 
-        // 2. PANNING MATH
-        float centeredPan = 0.5f + ((pan - 0.5f) * panAmt);
-        float leftGain = std::cos(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
-        float rightGain = std::sin(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
-
-        // 3. COMB FILTER / FLANGER MATH
-        float delayMs = 0.5f + (hue * 10.0f * hueAmt); 
-        int delaySamples = (int)(delayMs * getSampleRate() / 1000.0f);
-        if (delaySamples < 1) delaySamples = 1;
         int delayBufferSize = delayBuffer.getNumSamples();
+        
+        // CRASH PREVENTION: Skip if DAW sends a malformed buffer during track routing
+        if (delayBufferSize < 2 || delayBuffer.getNumChannels() == 0) return;
 
-        for (int channel = 0; channel < totalNumInputChannels; ++channel) {
-            auto* channelData = buffer.getWritePointer(channel);
-            auto* delayData = delayBufferSize > 0 ? delayBuffer.getWritePointer(channel % delayBuffer.getNumChannels()) : nullptr;
+        // FLIPPED LOOP: We process Sample-by-Sample so the smoothers glide perfectly
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
             
-            int tempDelayPos = delayWritePosition;
+            // --- ONE-POLE SMOOTHING (CURES THE CLICKING!) ---
+            // These glide the values smoothly by 0.2% every single sample
+            smoothMotion += 0.002f * (targetMotion - smoothMotion);
+            smoothHue += 0.002f * (targetHue - smoothHue);
+            smoothPan += 0.002f * (targetPan - smoothPan);
 
-            for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
-                float cleanSig = channelData[sample];
+            // 2. Calculate DSP Math for this exact millisecond
+            float drive = 1.0f + (smoothMotion * dynamicAmt * 40.0f); 
+            
+            float centeredPan = 0.5f + ((smoothPan - 0.5f) * panAmt);
+            float leftGain = std::cos(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
+            float rightGain = std::sin(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
+
+            float delayMs = 0.5f + (smoothHue * 10.0f * hueAmt); 
+            int delaySamples = (int)(delayMs * getSampleRate() / 1000.0f);
+            
+            // CRASH PREVENTION: Hard bounds checking so it never reads out of memory
+            if (delaySamples < 1) delaySamples = 1;
+            if (delaySamples >= delayBufferSize) delaySamples = delayBufferSize - 1;
+
+            // 3. Process the Audio Channels
+            for (int channel = 0; channel < totalNumInputChannels; ++channel) {
+                float cleanSig = buffer.getReadPointer(channel)[sample];
 
                 // A. SINE WAVEFOLDER
                 if (dynamicAmt > 0.01f) {
@@ -184,16 +172,15 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                 }
 
                 // B. HUE COMB FILTER
-                if (hueAmt > 0.01f && delayData != nullptr) {
-                    int readPos = tempDelayPos - delaySamples;
-                    if (readPos < 0) readPos += delayBufferSize;
+                if (hueAmt > 0.01f) {
+                    auto* delayData = delayBuffer.getWritePointer(channel % delayBuffer.getNumChannels());
+                    
+                    int readPos = delayWritePosition - delaySamples;
+                    while (readPos < 0) readPos += delayBufferSize; // Wraps negative indexes safely!
                     
                     float delayedSig = delayData[readPos];
-                    delayData[tempDelayPos] = cleanSig + (delayedSig * 0.6f); 
+                    delayData[delayWritePosition] = cleanSig + (delayedSig * 0.6f); 
                     cleanSig = (cleanSig * 0.5f) + (delayedSig * 0.5f);
-                    
-                    tempDelayPos++;
-                    if (tempDelayPos >= delayBufferSize) tempDelayPos = 0;
                 }
 
                 // C. AUTO-PANNER
@@ -202,12 +189,14 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                     if (channel == 1) cleanSig *= rightGain;
                 }
 
-                channelData[sample] = cleanSig;
+                buffer.getWritePointer(channel)[sample] = cleanSig;
             }
-        }
-        
-        if (hueAmt > 0.01f && delayBufferSize > 0) {
-            delayWritePosition = (delayWritePosition + buffer.getNumSamples()) % delayBufferSize;
+            
+            // Advance the delay timeline forward by 1 sample
+            if (hueAmt > 0.01f) {
+                delayWritePosition++;
+                if (delayWritePosition >= delayBufferSize) delayWritePosition = 0;
+            }
         }
 
     } else {
