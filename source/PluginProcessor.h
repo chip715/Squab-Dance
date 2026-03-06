@@ -50,6 +50,12 @@ private:
     juce::AudioBuffer<float> delayBuffer;
     int delayWritePosition = 0;
 
+    // --- HRTF BINAURAL MEMORY ---
+    juce::AudioBuffer<float> itdBuffer;
+    int itdWritePosition = 0;
+    float lpfStateL = 0.0f;
+    float lpfStateR = 0.0f;
+
     float smoothMotion = 0.0f;
     float smoothHue = 0.0f;
     float smoothPan = 0.5f;

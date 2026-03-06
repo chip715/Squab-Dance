@@ -83,6 +83,14 @@ void SquabDanceAudioProcessor::prepareToPlay (double sampleRate, int samplesPerB
 delayBuffer.setSize(getTotalNumOutputChannels(), (int)(sampleRate * 0.1) + 1);
     delayBuffer.clear();
     delayWritePosition = 0;
+
+    // HRTF ITD Micro-Delay (We only need 5 milliseconds of memory for a human head)
+    itdBuffer.setSize(2, (int)(sampleRate * 0.005) + 1);
+    itdBuffer.clear();
+    itdWritePosition = 0;
+    lpfStateL = 0.0f;
+    lpfStateR = 0.0f;
+
 }
 
 void SquabDanceAudioProcessor::releaseResources() {}
@@ -128,40 +136,34 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     if (manipOn && (dynamicAmt > 0.01f || hueAmt > 0.01f || panAmt > 0.01f)) {
 
-        // 1. Grab target values from the UI
         float targetMotion = visualMotion.load(std::memory_order_relaxed);
         float targetHue = visualHue.load(std::memory_order_relaxed);
         float targetPan = visualPan.load(std::memory_order_relaxed);
 
         int delayBufferSize = delayBuffer.getNumSamples();
+        int itdBufferSize = itdBuffer.getNumSamples();
         
-        // CRASH PREVENTION: Skip if DAW sends a malformed buffer during track routing
-        if (delayBufferSize < 2 || delayBuffer.getNumChannels() == 0) return;
+        if (delayBufferSize < 2 || itdBufferSize < 2 || delayBuffer.getNumChannels() == 0) return;
 
-        // FLIPPED LOOP: We process Sample-by-Sample so the smoothers glide perfectly
+        // Constants for HRTF Math
+        float maxItdSamples = 0.00075f * getSampleRate(); // 0.75ms max wrap-around delay for human head
+
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
             
-            // --- ONE-POLE SMOOTHING (CURES THE CLICKING!) ---
-            // These glide the values smoothly by 0.2% every single sample
             smoothMotion += 0.002f * (targetMotion - smoothMotion);
             smoothHue += 0.002f * (targetHue - smoothHue);
             smoothPan += 0.002f * (targetPan - smoothPan);
 
-            // 2. Calculate DSP Math for this exact millisecond
             float drive = 1.0f + (smoothMotion * dynamicAmt * 40.0f); 
-            
-            float centeredPan = 0.5f + ((smoothPan - 0.5f) * panAmt);
-            float leftGain = std::cos(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
-            float rightGain = std::sin(centeredPan * juce::MathConstants<float>::halfPi) * 1.414f;
-
-            float delayMs = 0.5f + (smoothHue * 10.0f * hueAmt); 
+            float delayMs = 0.1f + (smoothHue * 15.0f * hueAmt); 
             int delaySamples = (int)(delayMs * getSampleRate() / 1000.0f);
             
-            // CRASH PREVENTION: Hard bounds checking so it never reads out of memory
             if (delaySamples < 1) delaySamples = 1;
             if (delaySamples >= delayBufferSize) delaySamples = delayBufferSize - 1;
 
-            // 3. Process the Audio Channels
+            // HRTF Angle: Maps Pan (0.0 -> 1.0) to Radians (-PI/2 -> +PI/2)
+            float panAngle = (smoothPan - 0.5f) * panAmt * juce::MathConstants<float>::pi;
+
             for (int channel = 0; channel < totalNumInputChannels; ++channel) {
                 float cleanSig = buffer.getReadPointer(channel)[sample];
 
@@ -174,33 +176,62 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                 // B. HUE COMB FILTER
                 if (hueAmt > 0.01f) {
                     auto* delayData = delayBuffer.getWritePointer(channel % delayBuffer.getNumChannels());
-                    
                     int readPos = delayWritePosition - delaySamples;
-                    while (readPos < 0) readPos += delayBufferSize; // Wraps negative indexes safely!
-                    
+                    while (readPos < 0) readPos += delayBufferSize; 
                     float delayedSig = delayData[readPos];
-                    delayData[delayWritePosition] = cleanSig + (delayedSig * 0.6f); 
-                    cleanSig = (cleanSig * 0.5f) + (delayedSig * 0.5f);
+                    delayData[delayWritePosition] = cleanSig + std::tanh(delayedSig * 0.85f); 
+                    cleanSig = (cleanSig * 0.4f) + (delayedSig * 0.6f);
                 }
 
-                // C. AUTO-PANNER
+                // C. 3D BINAURAL HRTF PANNING
                 if (panAmt > 0.01f && totalNumInputChannels == 2) {
-                    if (channel == 0) cleanSig *= leftGain;
-                    if (channel == 1) cleanSig *= rightGain;
+                    // Logic: If sound moves Right (Angle > 0), the Left Ear (Ch 0) gets penalized.
+                    float shadowAngle = (channel == 0) ? panAngle : -panAngle; 
+                    float penalty = juce::jmax(0.0f, shadowAngle); // Only penalize the far ear!
+
+                    // 1. ILD (Level): Turn down the volume of the far ear
+                    float ildGain = std::cos(penalty);
+                    cleanSig *= ildGain;
+
+                    // 2. Head Shadow (Low Pass): Muffle the high frequencies of the far ear
+                    float shadowCutoff = 1.0f - juce::jmin(0.9f, penalty * 0.7f);
+                    if (channel == 0) {
+                        lpfStateL = (cleanSig * shadowCutoff) + (lpfStateL * (1.0f - shadowCutoff));
+                        cleanSig = lpfStateL;
+                    } else {
+                        lpfStateR = (cleanSig * shadowCutoff) + (lpfStateR * (1.0f - shadowCutoff));
+                        cleanSig = lpfStateR;
+                    }
+
+                    // 3. ITD (Time): Delay the far ear using the micro-buffer
+                    int itdDelaySamples = (int)((penalty / juce::MathConstants<float>::halfPi) * maxItdSamples);
+                    
+                    auto* itdData = itdBuffer.getWritePointer(channel);
+                    itdData[itdWritePosition] = cleanSig;
+                    
+                    int readPos = itdWritePosition - itdDelaySamples;
+                    while (readPos < 0) readPos += itdBufferSize;
+                    
+                    cleanSig = itdData[readPos];
                 }
 
                 buffer.getWritePointer(channel)[sample] = cleanSig;
             }
             
-            // Advance the delay timeline forward by 1 sample
+            // Advance the timeline for both delay buffers
             if (hueAmt > 0.01f) {
                 delayWritePosition++;
                 if (delayWritePosition >= delayBufferSize) delayWritePosition = 0;
+            }
+            if (panAmt > 0.01f) {
+                itdWritePosition++;
+                if (itdWritePosition >= itdBufferSize) itdWritePosition = 0;
             }
         }
 
     } else {
         delayBuffer.clear(); 
+        itdBuffer.clear();
     }
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
