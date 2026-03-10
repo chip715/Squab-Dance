@@ -7,7 +7,7 @@ const int DEFAULT_CHARACTER_INDEX = 11;
 SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (760, 520);
+    setSize (880, 540);
     characterDB = SpriteDatabase::getDatabase();
     preCacheImages();
 
@@ -406,12 +406,12 @@ void SquabDanceAudioProcessorEditor::paint (juce::Graphics& g) {
 }
 
 void SquabDanceAudioProcessorEditor::resized() {
-    // --- GLOBAL MARGINS & GRID (Restoring the 2x2 layout) ---
+    // --- EXPANDED GRID LAYOUT ---
     int margin = 30;
-    int colWidth = 330; 
+    int colWidth = 350; // Increased width for the columns
     
     int leftColX = margin;
-    int rightColX = getWidth() - margin - colWidth; 
+    int rightColX = leftColX + colWidth + 40; // Starts precisely at x=420
     
     int topRowY = margin;
     int botRowY = 270; 
@@ -426,24 +426,20 @@ void SquabDanceAudioProcessorEditor::resized() {
     // ==========================================
     // TOP RIGHT: Settings, Random Button & Speed
     // ==========================================
-    // Increased vertical offsets to give the attached labels breathing room
     categoryBox.setBounds(rightColX, topRowY + 15, colWidth, 24);
     animationBox.setBounds(rightColX, topRowY + 65, colWidth, 24);
-    
-    // The Pill Button slots below the animations
     randomButton.setBounds(rightColX, topRowY + 105, colWidth, 24); 
 
-    // Knobs sit perfectly below the button and right above the bottom row limit (260)
     int topKnobY = topRowY + 135;
     
-    scaleLabel.setBounds(rightColX + 10, topKnobY, 60, 20); 
-    scaleSlider.setBounds(rightColX + 10, topKnobY + 20, 60, 75); 
+    scaleLabel.setBounds(rightColX + 20, topKnobY, 60, 20); 
+    scaleSlider.setBounds(rightColX + 20, topKnobY + 20, 60, 75); 
 
-    speedLabel.setBounds(rightColX + 90, topKnobY, 60, 20); 
-    speedSlider.setBounds(rightColX + 90, topKnobY + 20, 60, 75); 
-    syncSlider.setBounds(rightColX + 90, topKnobY + 20, 60, 75); 
+    speedLabel.setBounds(rightColX + 110, topKnobY, 60, 20); 
+    speedSlider.setBounds(rightColX + 110, topKnobY + 20, 60, 75); 
+    syncSlider.setBounds(rightColX + 110, topKnobY + 20, 60, 75); 
 
-    int btnX = rightColX + 180;
+    int btnX = rightColX + 200;
     int btnY = topKnobY + 25;
     hzButton.setBounds(btnX, btnY, 40, 20);
     openButton.setBounds(btnX + 55, btnY, 60, 20); 
@@ -457,14 +453,16 @@ void SquabDanceAudioProcessorEditor::resized() {
     reactButton.setBounds(leftColX, botRowY + 25, colWidth, 70);
     
     int botKnobY = botRowY + 110;
-    intensityLabel.setBounds(leftColX + 25, botKnobY, 60, 20);
-    intensitySlider.setBounds(leftColX + 25, botKnobY + 20, 60, 75);
+    int spacing = 95; // Wide, beautiful spacing for 3 knobs
     
-    colorLabel.setBounds(leftColX + 135, botKnobY, 60, 20);
-    colorSlider.setBounds(leftColX + 135, botKnobY + 20, 60, 75);
+    intensityLabel.setBounds(leftColX + 15, botKnobY, 60, 20);
+    intensitySlider.setBounds(leftColX + 15, botKnobY + 20, 60, 75);
     
-    pumpLabel.setBounds(leftColX + 245, botKnobY, 60, 20);
-    pumpSlider.setBounds(leftColX + 245, botKnobY + 20, 60, 75);
+    colorLabel.setBounds(leftColX + 15 + spacing, botKnobY, 60, 20);
+    colorSlider.setBounds(leftColX + 15 + spacing, botKnobY + 20, 60, 75);
+    
+    pumpLabel.setBounds(leftColX + 15 + (spacing * 2), botKnobY, 60, 20);
+    pumpSlider.setBounds(leftColX + 15 + (spacing * 2), botKnobY + 20, 60, 75);
 
     // ==========================================
     // BOTTOM RIGHT: Audio Manipulation
@@ -472,38 +470,36 @@ void SquabDanceAudioProcessorEditor::resized() {
     manipTitleLabel.setBounds(rightColX, botRowY, colWidth, 20);
     manipButton.setBounds(rightColX, botRowY + 25, colWidth, 70);
     
-    // Tighter spacing to fit 4 knobs (50px increments instead of 110px)
+    int rSpacing = 85; // Perfect mathematical spacing to fit 4 knobs smoothly
+    
     dynamicLabel.setBounds(rightColX + 5, botKnobY, 60, 20);
     dynamicSlider.setBounds(rightColX + 5, botKnobY + 20, 60, 75);
-    satTypeBox.setBounds(rightColX - 5, botKnobY + 95, 80, 20); // Saturation Dropdown
+    satTypeBox.setBounds(rightColX - 5, botKnobY + 95, 80, 20); 
     
-    hueLabel.setBounds(rightColX + 80, botKnobY, 60, 20);
-    hueSlider.setBounds(rightColX + 80, botKnobY + 20, 60, 75);
+    hueLabel.setBounds(rightColX + 5 + rSpacing, botKnobY, 60, 20);
+    hueSlider.setBounds(rightColX + 5 + rSpacing, botKnobY + 20, 60, 75);
     
-    panningLabel.setBounds(rightColX + 155, botKnobY, 60, 20);
-    panningSlider.setBounds(rightColX + 155, botKnobY + 20, 60, 75);
+    panningLabel.setBounds(rightColX + 5 + (rSpacing * 2), botKnobY, 60, 20);
+    panningSlider.setBounds(rightColX + 5 + (rSpacing * 2), botKnobY + 20, 60, 75);
 
-    dryWetLabel.setBounds(rightColX + 230, botKnobY, 60, 20);
-    dryWetSlider.setBounds(rightColX + 230, botKnobY + 20, 60, 75);
+    dryWetLabel.setBounds(rightColX + 5 + (rSpacing * 3), botKnobY, 60, 20);
+    dryWetSlider.setBounds(rightColX + 5 + (rSpacing * 3), botKnobY + 20, 60, 75);
 
     // ==========================================
     // OUTPUT STRIP (Far Right)
     // ==========================================
-    int meterX = getWidth() - 50; 
+    int meterX = getWidth() - 55; // Pushed to the far right wall
     int meterY = 50; 
-    int meterWidth = 20;
-    int meterHeight = 400; // Massive, satisfying throw distance!
+    int meterWidth = 24;
+    int meterHeight = 400; 
 
-    // The meter sits in the background, the invisible slider sits EXACTLY on top of it
+    // The LED Meter sits visually in the background
     stereoMeter.setBounds(meterX, meterY, meterWidth, meterHeight);
-    outGainSlider.setBounds(meterX, meterY, meterWidth, meterHeight + 25); 
+    
+    // The Slider is intentionally 54 pixels wide so the Text Box can render "-12.5 dB"
+    // We center it directly over the 24-pixel meter using (meterX - 15)
+    outGainSlider.setBounds(meterX - 15, meterY, 54, meterHeight + 35); 
 
-    squabDadLabel.setBounds(rightColX + colWidth - 100, botKnobY + 100, 100, 20);
-
-
-    // ==========================================
-    // SQUAB DAD SIGNATURE
-    // ==========================================
     squabDadLabel.setBounds(rightColX + colWidth - 100, botKnobY + 100, 100, 20);
 }
 
