@@ -355,7 +355,7 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
     if (++debugTick % 30 == 0) {
         float dyn = *audioProcessor.apvts.getRawParameterValue("manip_dynamic");
         float mot = audioProcessor.visualMotion.load();
-        DBG("1. BRIDGE Check | Dynamic Knob: " << dyn << " | Visual Motion: " << mot);
+       // DBG("1. BRIDGE Check | Dynamic Knob: " << dyn << " | Visual Motion: " << mot);
     }
 
     float speed = *audioProcessor.apvts.getRawParameterValue("speed");

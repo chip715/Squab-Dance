@@ -6,11 +6,10 @@ class SpriteContent : public juce::Component, public juce::Timer
 {
 public:
     SpriteContent() { 
-        setSize(320, 760); 
+        // 1. MASSIVE FIXED CANVAS: 960x2280 supports exactly up to Scale 300%
+        setSize(960, 2280); 
         frameBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         reflectionBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
-        
-        //Memory buffer to compare physical pixel movement
         lastFrameBuffer = juce::Image(juce::Image::ARGB, 220, 256, true); 
         
         startTimerHz(30); 
@@ -69,7 +68,17 @@ public:
         g.fillAll(juce::Colours::transparentBlack);
         if (spriteSheets.empty()) return;
 
-        g.addTransform(juce::AffineTransform::scale(currentScale));
+        // 2. THE NEW ANCHOR MATH
+        float winCenterX = getWidth() / 2.0f;   // 480
+        float winCenterY = getHeight() / 2.0f;  // 1140 (This acts as the "Floor")
+
+       // apply scale
+        g.addTransform(juce::AffineTransform::scale(currentScale, currentScale, winCenterX, winCenterY));
+
+
+        // Offset the original 320x760 coordinates into the new massive canvas
+        float offsetX = winCenterX - 160.0f; 
+        float offsetY = winCenterY - 380.0f;
 
         int activeRow = isMouseOverOrDragging ? heldRow : currentRow;
         int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames; 
@@ -97,8 +106,10 @@ public:
 
         float destW = 220.0f * pScale;
         float destH = 256.0f * pScale;
-        float destX = 160.0f - (destW * 0.5f);
-        float destY = 380.0f - destH;
+        
+        // Draw exactly in the center of the massive canvas
+        float destX = offsetX + 160.0f - (destW * 0.5f);
+        float destY = offsetY + 380.0f - destH;
 
         if (sheetIndex < (int)spriteSheets.size() && spriteSheets[sheetIndex].isValid()) {
             auto& currentImg = spriteSheets[sheetIndex];
@@ -106,7 +117,6 @@ public:
             int drawSourceX = sx;
             int drawSourceY = sy;
 
-            
             // --- FAST PIXEL HUE/SATURATION ENGINE ---
             if (audioReactOn && audioLevel > 0.001f && (reactColor > 0.0f || reactIntensity > 0.0f)) {
                 frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
@@ -138,11 +148,8 @@ public:
                 drawSourceX = 0; drawSourceY = 0;
             }
 
-            // ========================================================
             // --- TRUE PIXEL-DELTA SENSOR ENGINE ---
-            // ========================================================
             float totalX = 0, totalHue = 0, pixelCount = 0, deltaCount = 0;
-            
             juce::Image::BitmapData scanData(currentImg, juce::Image::BitmapData::readOnly);
             juce::Image::BitmapData oldData(lastFrameBuffer, juce::Image::BitmapData::readOnly);
 
@@ -156,38 +163,25 @@ public:
                         totalHue += c.getHue();
                         pixelCount++;
                     }
-
-                    // Did this pixel change brightness since the last frame?
-                    if (std::abs(c.getBrightness() - oldC.getBrightness()) > 0.05f) {
-                        deltaCount++;
-                    }
+                    if (std::abs(c.getBrightness() - oldC.getBrightness()) > 0.05f) deltaCount++;
                 }
             }
 
            if (pixelCount > 0) {
                 currentPan = (totalX / pixelCount) / 220.0f; 
                 currentHue = totalHue / pixelCount;
-                
                 float frameMotion = (deltaCount / pixelCount) * 15.0f;
                 currentMotion = juce::jmax(currentMotion, juce::jmin(1.0f, frameMotion));
             }
             
-            // Faster decay so the distortion snaps off aggressively instead of lingering
-            currentMotion *= 0.70f;
-            // --- DEBUG: PRINT WHEN CHARACTER MOVES ---
-            if (deltaCount > 0) {
-                DBG("2. SENSOR Check | Pixels Moved: " << deltaCount << " | Resulting Motion: " << currentMotion);
-            }
+            currentMotion *= 0.70f; // Fast decay
 
-
-            // Save the current frame into memory to compare against next time!
+            // Save the current frame for motion sensing
             {
                 lastFrameBuffer.clear(lastFrameBuffer.getBounds(), juce::Colours::transparentBlack);
                 juce::Graphics gLast(lastFrameBuffer);
                 gLast.drawImage(currentImg, 0, 0, 220, 256, sx, sy, 220, 256);
             }
-            // ========================================================
-
 
             g.setOpacity(1.0f); 
             g.drawImage(sourceToDraw, destX, destY, destW, destH, drawSourceX, drawSourceY, 220, 256); 
@@ -221,11 +215,27 @@ public:
                         }
                     }
                 }
-                g.drawImage(reflectionBuffer, destX, 380.0f, destW, destH, 0, 0, 220, 256);
+                g.drawImage(reflectionBuffer, destX, offsetY + 380.0f, destW, destH, 0, 0, 220, 256);
             }
         }
     }
     
+    // 3. PERFECT CLICK-THROUGH HIT TESTING
+    bool hitTest(int x, int y) override {
+     
+        float dx = (float)x - (getWidth() / 2.0f);
+        float dy = (float)y - (getHeight() / 2.0f); 
+        
+        float hitWidth = 140.0f * currentScale;
+        float hitHeightUp = 260.0f * currentScale;
+        float hitHeightDown = 160.0f * currentScale;
+
+        if (std::abs(dx) > hitWidth) return false;
+        if (dy < -hitHeightUp || dy > hitHeightDown) return false;
+        
+        return true;
+    }
+
     void mouseDown (const juce::MouseEvent& e) override {
         isMouseOverOrDragging = true;
         if (auto* win = findParentComponentOfClass<juce::DocumentWindow>()) dragger.startDraggingComponent (win, e);
@@ -250,17 +260,18 @@ public:
         isPlaying = playing;
     }
 
+    // 4. PURE MATH SCALING (No OS Calls!)
     void setScale(float newScale) {
         newScale = juce::jmax(0.1f, newScale); 
         if (currentScale != newScale) {
             currentScale = newScale;
-            if (auto* win = findParentComponentOfClass<juce::DocumentWindow>()) win->setSize(juce::roundToInt(320 * currentScale), juce::roundToInt(760 * currentScale));
+            // We NO LONGER resize the OS window! We just tell the GPU to scale the bird.
             repaint();
         }
     }
 
-    void updateAudioReact(bool on, float intensity, float color, float pump, float level) {
-        audioReactOn = on; reactIntensity = intensity; reactColor = color; reactPump = pump; audioLevel = level;
+    void updateAudioReact(bool on, float intensity, float color, float pump, float floatLevel) {
+        audioReactOn = on; reactIntensity = intensity; reactColor = color; reactPump = pump; audioLevel = floatLevel;
     }
 
     float getMotion() const { return currentMotion; }
@@ -312,9 +323,17 @@ public:
         setAlwaysOnTop(true); setOpaque(false); setBackgroundColour(juce::Colours::transparentBlack);
         setDropShadowEnabled(false); 
 
+        // CRITICAL: Disable JUCE bounds constrainer so the giant invisible window can overflow off the screen edges!
+        if (auto* constrainer = getConstrainer()) {
+            constrainer->setMinimumOnscreenAmounts(0, 0, 0, 0);
+        }
+
         content = std::make_unique<SpriteContent>();
         setContentNonOwned(content.get(), true);
-        centreWithSize(320, 760); setVisible(true);
+        
+        // Spawn the massive invisible canvas perfectly centered on the user's primary monitor
+        centreWithSize(960, 2280); 
+        setVisible(true);
     }
 
     void closeButtonPressed() override { setVisible(false); }

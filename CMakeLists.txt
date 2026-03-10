@@ -5,16 +5,10 @@ project(SquabDance VERSION 0.0.1)
 # --- BYPASS VST2/VST3 CONFLICT ERROR ---
 add_definitions(-DJUCE_VST3_CAN_REPLACE_VST2=0)
 
-# 1. Download JUCE automatically
-include(FetchContent)
-FetchContent_Declare(
-    JUCE
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG        master
-)
-FetchContent_MakeAvailable(JUCE)
+# 1. Include JUCE from local submodule
+add_subdirectory(JUCE)
 
-# 2. Create the Plugin (VST3 and Standalone only)
+# 2. Create the Plugin (VST3, AU, and Standalone only)
 juce_add_plugin(SquabDance
     COMPANY_NAME "Squab Dad"
     BUNDLE_ID "com.SquabDad.SquabDance" 
@@ -25,7 +19,7 @@ juce_add_plugin(SquabDance
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE
     VST3_COPY_DIR "C:/Users/yeon7/AppData/Local/Programs/Common/VST3" #just for testing
-    FORMATS VST3 Standalone   # No VST2 here
+    FORMATS AU VST3 Standalone   # No VST2 here
     PLUGIN_CODE "SqDa" 
     VST2_ID "SqDa"
 )
@@ -46,7 +40,7 @@ target_link_libraries(SquabDance
     juce::juce_recommended_config_flags
 )
 
-# . EMBED ASSETS (Add all your PNGs here)
+# 5. EMBED ASSETS (Add all your PNGs here)
 juce_add_binary_data(SquabAssets
     SOURCES
    # --- SINGLE SHEET CATEGORIES ---
