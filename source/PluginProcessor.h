@@ -32,11 +32,15 @@ public:
     // This handles your parameters (Mirror, X, Y, Sync)
     juce::AudioProcessorValueTreeState apvts;
 
-    // --- NEW PLAYHEAD VARIABLES ---
+    // NEW PLAYHEAD VARIABLES ---
     std::atomic<double> currentBpm { 120.0 };
     std::atomic<double> currentPpq { 0.0 };
     std::atomic<bool> isPlaying { false };
     std::atomic<float> currentAudioLevel { 0.0f };
+
+    // OUTPUT METER LEVELS ---
+    std::atomic<float> outputLevelL { 0.0f };
+    std::atomic<float> outputLevelR { 0.0f };
 
     // --- VISUAL ANALYSIS SENSORS ---
     std::atomic<float> visualMotion { 0.0f }; // 0.0 to 1.0

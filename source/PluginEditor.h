@@ -69,6 +69,52 @@ public:
 
 };
 
+    // --- Custom Fader Handle  ---
+class CustomLinearSlider : public juce::LookAndFeel_V4 {
+public:
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                           float sliderPos, float minSliderPos, float maxSliderPos,
+                           const juce::Slider::SliderStyle style, juce::Slider& slider) override
+    {
+        // The track is completely invisible so the color meter shows through!
+        // We only draw a crisp white horizontal bar for the thumb
+        g.setColour(juce::Colours::white);
+        g.fillRect(x - 4, (int)sliderPos - 2, width + 8, 4); 
+    }
+};
+
+// --- Stereo Color LED Meter ---
+class LevelMeter : public juce::Component {
+public:
+    void setLevels(float l, float r) { levelL = l; levelR = r; repaint(); }
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds().toFloat();
+        
+        // Dark background for empty LEDs
+        g.setColour(juce::Colour(0xFF111111));
+        g.fillRect(bounds);
+
+        float w = bounds.getWidth() / 2.0f - 1.0f; // Split into Left and Right channels
+
+        auto drawBar = [&](float level, float x) {
+            float h = juce::jlimit(0.0f, 1.0f, level) * bounds.getHeight();
+            auto fillBounds = juce::Rectangle<float>(x, bounds.getBottom() - h, w, h);
+            
+            // Beautiful Green -> Yellow -> Red gradient
+            juce::ColourGradient grad(juce::Colour(0xFFFF3333), x, bounds.getY(),
+                                      juce::Colour(0xFF33FF55), x, bounds.getBottom(), false);
+            grad.addColour(0.2, juce::Colour(0xFFFFD700)); // Yellow warning zone
+            g.setGradientFill(grad);
+            g.fillRect(fillBounds);
+        };
+
+        drawBar(levelL, 0.0f);
+        drawBar(levelR, w + 2.0f);
+    }
+private:
+    float levelL = 0.0f, levelR = 0.0f;
+};
+
 class SquabDanceAudioProcessorEditor : public juce::AudioProcessorEditor,
                                        public juce::Timer
 {
@@ -153,7 +199,17 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> hueAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> panningAttachment;
 
-    
+    // dry wet slider
+    juce::Slider dryWetSlider;
+    juce::Label dryWetLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dryWetAttachment;
+
+    // --- NEW METER SECTION ---
+    CustomLinearSlider linearLookAndFeel;
+    LevelMeter stereoMeter;
+    juce::Slider outGainSlider;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outGainAttachment;
+
 
     std::vector<CharacterDef> characterDB;
     std::unique_ptr<SpriteWindow> spriteWindow;

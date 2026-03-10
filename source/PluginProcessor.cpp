@@ -67,6 +67,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SquabDanceAudioProcessor::cr
     // --- SATURATION TYPE  ---
     juce::StringArray saturationOptions = { "Wavefolder", "Soft Clip", "Hard Clip", "Bitcrusher" };
     layout.add(std::make_unique<juce::AudioParameterChoice>("sat_type", "Saturation Type", saturationOptions, 0));
+
+    // --- NEW: OUTPUT SECTION ---
+    layout.add(std::make_unique<juce::AudioParameterFloat>("dry_wet", "Dry/Wet", 0.0f, 100.0f, 100.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("out_gain", "Output Gain", -60.0f, 12.0f, 0.0f));
+
+
     return layout;
 }
 
@@ -136,60 +142,59 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     float hueAmt = *apvts.getRawParameterValue("manip_hue") / 100.0f;
     float panAmt = *apvts.getRawParameterValue("manip_pan") / 100.0f;
 
-    if (manipOn && (dynamicAmt > 0.01f || hueAmt > 0.01f || panAmt > 0.01f)) {
+    // Grab these parameters BEFORE the loop so they are ready to use
+    float dryWet = *apvts.getRawParameterValue("dry_wet") / 100.0f;
+    float outGainDb = *apvts.getRawParameterValue("out_gain");
+    float outGainAmt = juce::Decibels::decibelsToGain(outGainDb);
+    int satType = (int)*apvts.getRawParameterValue("sat_type");
 
-        float targetMotion = visualMotion.load(std::memory_order_relaxed);
-        float targetHue = visualHue.load(std::memory_order_relaxed);
-        float targetPan = visualPan.load(std::memory_order_relaxed);
+    float targetMotion = visualMotion.load(std::memory_order_relaxed);
+    float targetHue = visualHue.load(std::memory_order_relaxed);
+    float targetPan = visualPan.load(std::memory_order_relaxed);
 
-        int delayBufferSize = delayBuffer.getNumSamples();
-        int itdBufferSize = itdBuffer.getNumSamples();
+    int delayBufferSize = delayBuffer.getNumSamples();
+    int itdBufferSize = itdBuffer.getNumSamples();
+    
+    if (delayBufferSize < 2 || itdBufferSize < 2 || delayBuffer.getNumChannels() == 0) return;
+
+    float maxItdSamples = 0.00075f * getSampleRate(); 
+
+    // We track peaks out here so they survive the sample loop
+    float peakL = 0.0f;
+    float peakR = 0.0f;
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
         
-        if (delayBufferSize < 2 || itdBufferSize < 2 || delayBuffer.getNumChannels() == 0) return;
+        smoothMotion += 0.01f * (targetMotion - smoothMotion);
+        smoothHue += 0.002f * (targetHue - smoothHue);
+        smoothPan += 0.002f * (targetPan - smoothPan);
 
-        // Constants for HRTF Math
-        float maxItdSamples = 0.00075f * getSampleRate(); // 0.75ms max wrap-around delay for human head
+        float drive = 1.0f + (smoothMotion * dynamicAmt * 40.0f); 
+        float delayMs = 0.1f + (smoothHue * 15.0f * hueAmt); 
+        int delaySamples = (int)(delayMs * getSampleRate() / 1000.0f);
         
-        // Grab the current mode OUTSIDE the loop for better CPU performance
-        int satType = (int)*apvts.getRawParameterValue("sat_type");
+        if (delaySamples < 1) delaySamples = 1;
+        if (delaySamples >= delayBufferSize) delaySamples = delayBufferSize - 1;
 
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
+        float panAngle = (smoothPan - 0.5f) * panAmt * juce::MathConstants<float>::pi;
+
+        for (int channel = 0; channel < totalNumInputChannels; ++channel) {
+            float cleanSig = buffer.getReadPointer(channel)[sample];
             
-            smoothMotion += 0.002f * (targetMotion - smoothMotion);
-            smoothHue += 0.002f * (targetHue - smoothHue);
-            smoothPan += 0.002f * (targetPan - smoothPan);
+            // 1. SAVE THE DRY SIGNAL
+            float drySig = cleanSig; 
 
-            float drive = 1.0f + (smoothMotion * dynamicAmt * 40.0f); 
-            float delayMs = 0.1f + (smoothHue * 15.0f * hueAmt); 
-            int delaySamples = (int)(delayMs * getSampleRate() / 1000.0f);
-            
-            if (delaySamples < 1) delaySamples = 1;
-            if (delaySamples >= delayBufferSize) delaySamples = delayBufferSize - 1;
-
-            // HRTF Angle: Maps Pan (0.0 -> 1.0) to Radians (-PI/2 -> +PI/2)
-            float panAngle = (smoothPan - 0.5f) * panAmt * juce::MathConstants<float>::pi;
-
-            for (int channel = 0; channel < totalNumInputChannels; ++channel) {
-                float cleanSig = buffer.getReadPointer(channel)[sample];
-
+            // ONLY apply the heavy math if Manipulation is turned ON
+            if (manipOn && (dynamicAmt > 0.01f || hueAmt > 0.01f || panAmt > 0.01f)) {
+                
                 // A. SATURATION / DISTORTION ENGINE
                 if (dynamicAmt > 0.01f) {
                     float pushedSig = cleanSig * drive;
-                    
                     switch (satType) {
-                        case 0: // Wavefolder (Aggressive, metallic phase-flipping)
-                            cleanSig = std::sin(pushedSig) * 0.7f; 
-                            break;
-                            
-                        case 1: // Soft Clip (Warm, analog-style tube saturation)
-                            cleanSig = std::tanh(pushedSig) * 0.8f;
-                            break;
-                            
-                        case 2: // Hard Clip (Harsh, digital fuzz)
-                            cleanSig = juce::jlimit(-0.8f, 0.8f, pushedSig);
-                            break;
-                            
-                        case 3: // Bitcrusher (Resolution drops as motion increases)
+                        case 0: cleanSig = std::sin(pushedSig) * 0.7f; break;
+                        case 1: cleanSig = std::tanh(pushedSig) * 0.8f; break;
+                        case 2: cleanSig = juce::jlimit(-0.8f, 0.8f, pushedSig); break;
+                        case 3: 
                             float res = std::pow(2.0f, 2.0f + (1.0f - smoothMotion) * 10.0f);
                             cleanSig = std::round(pushedSig * res) / res;
                             break;
@@ -208,15 +213,11 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
                 // C. 3D BINAURAL HRTF PANNING
                 if (panAmt > 0.01f && totalNumInputChannels == 2) {
-                    // Logic: If sound moves Right (Angle > 0), the Left Ear (Ch 0) gets penalized.
                     float shadowAngle = (channel == 0) ? panAngle : -panAngle; 
-                    float penalty = juce::jmax(0.0f, shadowAngle); // Only penalize the far ear!
-
-                    // 1. ILD (Level): Turn down the volume of the far ear
+                    float penalty = juce::jmax(0.0f, shadowAngle); 
                     float ildGain = std::cos(penalty);
                     cleanSig *= ildGain;
 
-                    // 2. Head Shadow (Low Pass): Muffle the high frequencies of the far ear
                     float shadowCutoff = 1.0f - juce::jmin(0.9f, penalty * 0.7f);
                     if (channel == 0) {
                         lpfStateL = (cleanSig * shadowCutoff) + (lpfStateL * (1.0f - shadowCutoff));
@@ -226,22 +227,31 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                         cleanSig = lpfStateR;
                     }
 
-                    // 3. ITD (Time): Delay the far ear using the micro-buffer
                     int itdDelaySamples = (int)((penalty / juce::MathConstants<float>::halfPi) * maxItdSamples);
-                    
                     auto* itdData = itdBuffer.getWritePointer(channel);
                     itdData[itdWritePosition] = cleanSig;
-                    
                     int readPos = itdWritePosition - itdDelaySamples;
                     while (readPos < 0) readPos += itdBufferSize;
-                    
                     cleanSig = itdData[readPos];
                 }
-
-                buffer.getWritePointer(channel)[sample] = cleanSig;
             }
+
+            // 2. MIX DRY AND WET SIGNALS
+            cleanSig = (drySig * (1.0f - dryWet)) + (cleanSig * dryWet);
             
-            // Advance the timeline for both delay buffers
+            // 3. APPLY OUTPUT GAIN
+            cleanSig *= outGainAmt;
+
+            // 4. TRACK METER PEAKS
+            if (channel == 0) peakL = juce::jmax(peakL, std::abs(cleanSig));
+            if (channel == 1) peakR = juce::jmax(peakR, std::abs(cleanSig));
+
+            // 5. WRITE TO BUFFER
+            buffer.getWritePointer(channel)[sample] = cleanSig;
+        }
+        
+        // Advance the timelines
+        if (manipOn) {
             if (hueAmt > 0.01f) {
                 delayWritePosition++;
                 if (delayWritePosition >= delayBufferSize) delayWritePosition = 0;
@@ -251,15 +261,21 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                 if (itdWritePosition >= itdBufferSize) itdWritePosition = 0;
             }
         }
+    }
 
-    } else {
+    if (!manipOn) {
         delayBuffer.clear(); 
         itdBuffer.clear();
     }
 
+    // Push the final peaks to the UI thread
+    outputLevelL.store(peakL, std::memory_order_relaxed);
+    outputLevelR.store(peakR, std::memory_order_relaxed);
+
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
-} 
+}
+
 
 bool SquabDanceAudioProcessor::hasEditor() const { return true; }
 

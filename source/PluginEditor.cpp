@@ -194,6 +194,39 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
             spriteWindow->getContent()->resetAnimation();
         }
     };
+
+    auto setupReactKnob = [this](juce::Slider& s, juce::Label& l, juce::String text, juce::String paramID, std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& attach) {
+        addAndMakeVisible(l);
+        l.setText(text, juce::dontSendNotification);
+        l.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        l.setJustificationType(juce::Justification::centred);
+        
+        addAndMakeVisible(s);
+        s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+        s.setColour(juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
+        s.setNumDecimalPlacesToDisplay(0); 
+        s.setTextValueSuffix(" %");        
+        s.setLookAndFeel(&customLookAndFeel);
+        s.setDoubleClickReturnValue(true, 100.0, juce::ModifierKeys::noModifiers);
+        attach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, paramID, s);
+    };
+
+    // Initialize Dry/Wet Knob
+    setupReactKnob(dryWetSlider, dryWetLabel, "Dry / Wet", "dry_wet", dryWetAttachment);
+
+    // Initialize Meter and Fader
+    addAndMakeVisible(stereoMeter);
+    
+    addAndMakeVisible(outGainSlider);
+    outGainSlider.setSliderStyle(juce::Slider::LinearVertical);
+    outGainSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+    outGainSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
+    outGainSlider.setNumDecimalPlacesToDisplay(1);
+    outGainSlider.setTextValueSuffix(" dB");
+    outGainSlider.setLookAndFeel(&linearLookAndFeel);
+    outGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "out_gain", outGainSlider);
+
 // --- AUDIO REACTIVITY INITIALIZATION ---
     addAndMakeVisible(reactTitleLabel);
     reactTitleLabel.setText("Audio Reactivity", juce::dontSendNotification);
@@ -212,22 +245,7 @@ SquabDanceAudioProcessorEditor::SquabDanceAudioProcessorEditor (SquabDanceAudioP
     };
     reactButton.setButtonText(*audioProcessor.apvts.getRawParameterValue("audio_react") > 0.5f ? "Audio Reactive On" : "Audio Reactive Off");
 
-    auto setupReactKnob = [this](juce::Slider& s, juce::Label& l, juce::String text, juce::String paramID, std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& attach) {
-        addAndMakeVisible(l);
-        l.setText(text, juce::dontSendNotification);
-        l.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-        l.setJustificationType(juce::Justification::centred);
-        
-        addAndMakeVisible(s);
-        s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
-        s.setColour(juce::Slider::textBoxTextColourId, juce::Colours::lightgrey);
-        s.setNumDecimalPlacesToDisplay(0); 
-        s.setTextValueSuffix(" %");        
-        s.setLookAndFeel(&customLookAndFeel);
-        s.setDoubleClickReturnValue(true, 100.0, juce::ModifierKeys::noModifiers);
-        attach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, paramID, s);
-    };
+    
 
     setupReactKnob(intensitySlider, intensityLabel, "Intensity", "react_intensity", intensityAttachment);
     setupReactKnob(colorSlider, colorLabel, "Color", "react_color", colorAttachment);
@@ -301,7 +319,18 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
     float reactInt = *audioProcessor.apvts.getRawParameterValue("react_intensity");
     float reactCol = *audioProcessor.apvts.getRawParameterValue("react_color");
     float reactPumpAmount = *audioProcessor.apvts.getRawParameterValue("react_pump");
+   
+    // Grab the peaks from the DSP
+    float peakL = audioProcessor.outputLevelL.load();
+    float peakR = audioProcessor.outputLevelR.load();
     
+    stereoMeter.setLevels(peakL, peakR);
+
+    // Fade the peaks out slightly so the meter falls smoothly like a real LED
+    audioProcessor.outputLevelL.store(peakL * 0.85f, std::memory_order_relaxed);
+    audioProcessor.outputLevelR.store(peakR * 0.85f, std::memory_order_relaxed);
+
+
     spriteWindow->getContent()->updateAudioReact(reactOn, reactInt, reactCol, reactPumpAmount, audioProcessor.currentAudioLevel.load());
     
     const double syncBeatLengths[] = {
@@ -443,17 +472,34 @@ void SquabDanceAudioProcessorEditor::resized() {
     manipTitleLabel.setBounds(rightColX, botRowY, colWidth, 20);
     manipButton.setBounds(rightColX, botRowY + 25, colWidth, 70);
     
-    dynamicLabel.setBounds(rightColX + 25, botKnobY, 60, 20);
-    dynamicSlider.setBounds(rightColX + 25, botKnobY + 20, 60, 75);
+    // Tighter spacing to fit 4 knobs (50px increments instead of 110px)
+    dynamicLabel.setBounds(rightColX + 5, botKnobY, 60, 20);
+    dynamicSlider.setBounds(rightColX + 5, botKnobY + 20, 60, 75);
+    satTypeBox.setBounds(rightColX - 5, botKnobY + 95, 80, 20); // Saturation Dropdown
     
-    // NEW: Centered perfectly under the Dynamic Slider
-    satTypeBox.setBounds(rightColX + 15, botKnobY + 95, 80, 20);
+    hueLabel.setBounds(rightColX + 80, botKnobY, 60, 20);
+    hueSlider.setBounds(rightColX + 80, botKnobY + 20, 60, 75);
     
-    hueLabel.setBounds(rightColX + 135, botKnobY, 60, 20);
-    hueSlider.setBounds(rightColX + 135, botKnobY + 20, 60, 75);
-    
-    panningLabel.setBounds(rightColX + 245, botKnobY, 60, 20);
-    panningSlider.setBounds(rightColX + 245, botKnobY + 20, 60, 75);
+    panningLabel.setBounds(rightColX + 155, botKnobY, 60, 20);
+    panningSlider.setBounds(rightColX + 155, botKnobY + 20, 60, 75);
+
+    dryWetLabel.setBounds(rightColX + 230, botKnobY, 60, 20);
+    dryWetSlider.setBounds(rightColX + 230, botKnobY + 20, 60, 75);
+
+    // ==========================================
+    // OUTPUT STRIP (Far Right)
+    // ==========================================
+    int meterX = getWidth() - 50; 
+    int meterY = 50; 
+    int meterWidth = 20;
+    int meterHeight = 400; // Massive, satisfying throw distance!
+
+    // The meter sits in the background, the invisible slider sits EXACTLY on top of it
+    stereoMeter.setBounds(meterX, meterY, meterWidth, meterHeight);
+    outGainSlider.setBounds(meterX, meterY, meterWidth, meterHeight + 25); 
+
+    squabDadLabel.setBounds(rightColX + colWidth - 100, botKnobY + 100, 100, 20);
+
 
     // ==========================================
     // SQUAB DAD SIGNATURE
