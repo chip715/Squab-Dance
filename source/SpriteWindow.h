@@ -10,7 +10,7 @@ public:
         frameBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         reflectionBuffer = juce::Image(juce::Image::ARGB, 220, 256, true);
         
-        // NEW: Memory buffer to compare physical pixel movement
+        //Memory buffer to compare physical pixel movement
         lastFrameBuffer = juce::Image(juce::Image::ARGB, 220, 256, true); 
         
         startTimerHz(30); 
@@ -164,16 +164,16 @@ public:
                 }
             }
 
-            if (pixelCount > 0) {
+           if (pixelCount > 0) {
                 currentPan = (totalX / pixelCount) / 220.0f; 
                 currentHue = totalHue / pixelCount;
                 
-                // Calculates how violently the character is thrashing around!
-                float frameMotion = (deltaCount / pixelCount) * 2.0f;
+                float frameMotion = (deltaCount / pixelCount) * 15.0f;
                 currentMotion = juce::jmax(currentMotion, juce::jmin(1.0f, frameMotion));
             }
-            currentMotion *= 0.85f; // Smooth decay so the distortion doesn't snap off abruptly
             
+            // Faster decay so the distortion snaps off aggressively instead of lingering
+            currentMotion *= 0.70f;
             // --- DEBUG: PRINT WHEN CHARACTER MOVES ---
             if (deltaCount > 0) {
                 DBG("2. SENSOR Check | Pixels Moved: " << deltaCount << " | Resulting Motion: " << currentMotion);
