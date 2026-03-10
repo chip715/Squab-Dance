@@ -82,7 +82,7 @@ public:
         
         // Add a subtle dark outline so it pops against the bright LEDs
         g.setColour(juce::Colours::black.withAlpha(0.6f));
-        
+
         g.drawRect(x + width / 2 - 16, (int)sliderPos - 4, 32, 8, 1);
     }
 };
@@ -112,13 +112,7 @@ public:
 
         drawBar(levelL, 0.0f);
         drawBar(levelR, w + 2.0f);
-        
-        // --- ADD TICK MARKS ---
-        g.setColour(juce::Colours::white.withAlpha(0.3f));
-        g.drawLine(0, bounds.getHeight() * 0.25f, bounds.getWidth(), bounds.getHeight() * 0.25f, 1.5f);
-        g.drawLine(0, bounds.getHeight() * 0.50f, bounds.getWidth(), bounds.getHeight() * 0.50f, 1.5f);
-        g.drawLine(0, bounds.getHeight() * 0.75f, bounds.getWidth(), bounds.getHeight() * 0.75f, 1.5f);
-    }
+    }    
 private:
     float levelL = 0.0f, levelR = 0.0f;
 };
