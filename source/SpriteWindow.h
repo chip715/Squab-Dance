@@ -40,6 +40,10 @@ public:
     void resetAnimation() { currentFrame = 0; repaint(); }
 
     void timerCallback() override {
+        // --- THE BOUNCE PHYSICS ---
+        if (audioLevel > smoothPump) smoothPump = audioLevel; 
+        else smoothPump *= 0.85f; // Decay speed
+
         int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames;
         if (activeFrames <= 0) return;
 
@@ -72,9 +76,8 @@ public:
         float winCenterX = getWidth() / 2.0f;   // 480
         float winCenterY = getHeight() / 2.0f;  // 1140 (This acts as the "Floor")
 
-       // apply scale
+        // apply scale
         g.addTransform(juce::AffineTransform::scale(currentScale, currentScale, winCenterX, winCenterY));
-
 
         // Offset the original 320x760 coordinates into the new massive canvas
         float offsetX = winCenterX - 160.0f; 
@@ -99,9 +102,10 @@ public:
             sheetIndex = 0;
         }
 
+        // --- 1. THE PHYSICS PUMP ---
         float pScale = 1.0f;
-        if (audioReactOn && audioLevel > 0.001f && reactPump > 0.0f) {
-            pScale += (audioLevel * (reactPump / 100.0f) * 0.45f); 
+        if (audioReactOn && smoothPump > 0.001f && reactPump > 0.0f) {
+            pScale += (smoothPump * (reactPump / 100.0f) * 0.45f); 
         }
 
         float destW = 220.0f * pScale;
@@ -117,7 +121,7 @@ public:
             int drawSourceX = sx;
             int drawSourceY = sy;
 
-            // --- FAST PIXEL HUE/SATURATION ENGINE ---
+            // --- 2. FAST PIXEL HUE/SATURATION ENGINE ---
             if (audioReactOn && audioLevel > 0.001f && (reactColor > 0.0f || reactIntensity > 0.0f)) {
                 frameBuffer.clear(frameBuffer.getBounds(), juce::Colours::transparentBlack);
                 {
@@ -126,6 +130,7 @@ public:
                 }
 
                 juce::Image::BitmapData data(frameBuffer, juce::Image::BitmapData::readWrite);
+                
                 float hueShift = audioLevel * (reactColor / 100.0f);
                 float intensityFactor = audioLevel * (reactIntensity / 100.0f);
                 float satBoost = intensityFactor * 2.0f; 
@@ -134,7 +139,9 @@ public:
                 for (int y = 0; y < 256; ++y) {
                     for (int x = 0; x < 220; ++x) {
                         juce::Colour c = data.getPixelColour(x, y);
-                        if (c.getAlpha() > 0) {
+                        
+                        // THE CPU SAVER: Only run the heavy math if the pixel is actually visible!
+                        if (c.getAlpha() > 10) {
                             data.setPixelColour(x, y, juce::Colour::fromHSV(
                                 std::fmod(c.getHue() + hueShift, 1.0f),
                                 juce::jmin(1.0f, c.getSaturation() * (1.0f + satBoost)), 
@@ -222,7 +229,6 @@ public:
     
     // 3. PERFECT CLICK-THROUGH HIT TESTING
     bool hitTest(int x, int y) override {
-     
         float dx = (float)x - (getWidth() / 2.0f);
         float dy = (float)y - (getHeight() / 2.0f); 
         
@@ -265,7 +271,6 @@ public:
         newScale = juce::jmax(0.1f, newScale); 
         if (currentScale != newScale) {
             currentScale = newScale;
-            // We NO LONGER resize the OS window! We just tell the GPU to scale the bird.
             repaint();
         }
     }
@@ -309,6 +314,8 @@ private:
     float currentHue = 0.0f;
     float currentPan = 0.5f;
     int lastAnalyzedFrame = -1;
+
+    float smoothPump = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpriteContent)
 };
