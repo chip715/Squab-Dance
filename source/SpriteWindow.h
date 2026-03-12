@@ -157,7 +157,7 @@ public:
 
             // --- TRUE PIXEL-DELTA SENSOR ENGINE ---
             float totalX = 0, totalHue = 0, pixelCount = 0, deltaCount = 0;
-            juce::Image::BitmapData scanData(currentImg, juce::Image::BitmapData::readOnly);
+            juce::Image::BitmapData scanData(sourceToDraw, juce::Image::BitmapData::readOnly);
             juce::Image::BitmapData oldData(lastFrameBuffer, juce::Image::BitmapData::readOnly);
 
             for (int y = 0; y < 256; y += 4) {
