@@ -360,21 +360,24 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
 
     float speed = *audioProcessor.apvts.getRawParameterValue("speed");
     bool mir = *audioProcessor.apvts.getRawParameterValue("mirror") > 0.5f;
-    int style = animationBox.getSelectedId() - 1; 
+   int style = juce::jmax(0, animationBox.getSelectedId() - 1);
     
     mirrorButton.setButtonText(mir ? "Reflection" : "No Reflection");
 
     float scaleVal = *audioProcessor.apvts.getRawParameterValue("scale") / 100.0f;
     spriteWindow->getContent()->setScale(scaleVal);
 
-    int catIdx = categoryBox.getSelectedId() - 1;
+   int catIdx = categoryBox.getSelectedId() - 1;
     
     int frames = 8;
-    int hRow = 9;    
+    int hRow = 0;    // Default to 0 instead of 9 to be inherently safe
     int hFrames = 8; 
 
     if (catIdx >= 0 && catIdx < (int)characterDB.size()) {
         auto& anims = characterDB[catIdx].anims;
+        
+        // Ensure the style can NEVER exceed the available animations for this character
+        style = juce::jlimit(0, juce::jmax(0, (int)anims.size() - 1), style);
         
         if (style >= 0 && style < (int)anims.size()) {
             frames = anims[style].frameCount;
@@ -391,14 +394,15 @@ void SquabDanceAudioProcessorEditor::timerCallback() {
             }
         }
 
-        if (!foundHeld && anims.size() > 9) {
-            hRow = 9;
-            hFrames = anims[9].frameCount;
+        // If no drag animation is found, safely default to the VERY LAST animation available
+        if (!foundHeld && !anims.empty()) {
+            hRow = anims.size() - 1;
+            hFrames = anims.back().frameCount;
         }
     }
 
     spriteWindow->getContent()->setSpeed(speed);
-    spriteWindow->getContent()->updateParams(style, frames, hRow, hFrames, mir); 
+    spriteWindow->getContent()->updateParams(style, frames, hRow, hFrames, mir);
 }
 
 void SquabDanceAudioProcessorEditor::paint (juce::Graphics& g) { 

@@ -88,17 +88,23 @@ const juce::String SquabDanceAudioProcessor::getProgramName (int index) { return
 void SquabDanceAudioProcessor::changeProgramName (int index, const juce::String& newName) {}
 
 void SquabDanceAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock) {
-delayBuffer.setSize(getTotalNumOutputChannels(), (int)(sampleRate * 0.1) + 1);
+    // 1. Ask the DAW how many channels we need to support
+    int maxChannels = juce::jmax(1, getTotalNumInputChannels());
+
+    // 2. Resize all DSP vectors to match the DAW's channel count
+    lpfState.assign(maxChannels, 0.0f);
+    svfLp.assign(maxChannels, 0.0f);
+    svfHp.assign(maxChannels, 0.0f);
+    svfBp.assign(maxChannels, 0.0f);
+
+    // 3. Resize AudioBuffers
+    delayBuffer.setSize(maxChannels, (int)(sampleRate * 0.1) + 1);
     delayBuffer.clear();
     delayWritePosition = 0;
 
-    // HRTF ITD Micro-Delay (We only need 5 milliseconds of memory for a human head)
-    itdBuffer.setSize(2, (int)(sampleRate * 0.005) + 1);
+    itdBuffer.setSize(maxChannels, (int)(sampleRate * 0.005) + 1);
     itdBuffer.clear();
     itdWritePosition = 0;
-    lpfStateL = 0.0f;
-    lpfStateR = 0.0f;
-
 }
 
 void SquabDanceAudioProcessor::releaseResources() {}
@@ -159,6 +165,11 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     float maxItdSamples = 0.00075f * getSampleRate(); 
 
+    // THE DYNAMIC CEILING: 
+    // This guarantees we NEVER process more channels than we have allocated memory for, 
+    // instantly preventing Ableton/Reaper phantom channel crashes.
+    int safeNumChannels = juce::jmin(buffer.getNumChannels(), (int)svfLp.size());
+
     // We track peaks out here so they survive the sample loop
     float peakL = 0.0f;
     float peakR = 0.0f;
@@ -178,16 +189,14 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
         float panAngle = (smoothPan - 0.5f) * panAmt * juce::MathConstants<float>::pi;
 
-        for (int channel = 0; channel < totalNumInputChannels; ++channel) {
+        // MULTI-CHANNEL LOOP
+        for (int channel = 0; channel < safeNumChannels; ++channel) {
             float cleanSig = buffer.getReadPointer(channel)[sample];
-            
-            // 1. SAVE THE DRY SIGNAL
             float drySig = cleanSig; 
 
-            // ONLY apply the heavy math if Manipulation is turned ON
             if (manipOn && (dynamicAmt > 0.01f || hueAmt > 0.01f || panAmt > 0.01f)) {
                 
-                // A. SATURATION / DISTORTION ENGINE
+                // A. SATURATION
                 if (dynamicAmt > 0.01f) {
                     float pushedSig = cleanSig * drive;
                     switch (satType) {
@@ -201,52 +210,50 @@ void SquabDanceAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                     }
                 }
 
-                // B. HUE COMB FILTER
+                // B. SYNESTHESIA FILTER (Color = Frequency Cutoff)
                 if (hueAmt > 0.01f) {
-                    auto* delayData = delayBuffer.getWritePointer(channel % delayBuffer.getNumChannels());
-                    int readPos = delayWritePosition - delaySamples;
-                    while (readPos < 0) readPos += delayBufferSize; 
-                    float delayedSig = delayData[readPos];
-                    delayData[delayWritePosition] = cleanSig + std::tanh(delayedSig * 0.85f); 
-                    cleanSig = (cleanSig * 0.4f) + (delayedSig * 0.6f);
+                    float cutoffFreq = 80.0f + (smoothHue * 7920.0f);
+                    float q = 0.5f + (hueAmt * 4.0f); 
+                    float damp = 1.0f / q;
+                    
+                    float f = 2.0f * std::sin(juce::MathConstants<float>::pi * cutoffFreq / getSampleRate());
+                    f = juce::jlimit(0.0f, 1.0f, f);
+
+                    svfHp[channel] = cleanSig - (damp * svfBp[channel]) - svfLp[channel];
+                    svfBp[channel] += f * svfHp[channel];
+                    svfLp[channel] += f * svfBp[channel];
+
+                    cleanSig = (cleanSig * (1.0f - hueAmt)) + (svfLp[channel] * hueAmt);
                 }
 
-                // C. 3D BINAURAL HRTF PANNING
-                if (panAmt > 0.01f && totalNumInputChannels == 2) {
-                    float shadowAngle = (channel == 0) ? panAngle : -panAngle; 
+                // C. MULTI-CHANNEL 3D PANNING
+                if (panAmt > 0.01f) {
+                    // Even channels (0, 2, 4) act as Left Ear, Odd channels (1, 3, 5) act as Right Ear
+                    float shadowAngle = (channel % 2 == 0) ? panAngle : -panAngle; 
                     float penalty = juce::jmax(0.0f, shadowAngle); 
                     float ildGain = std::cos(penalty);
                     cleanSig *= ildGain;
 
                     float shadowCutoff = 1.0f - juce::jmin(0.9f, penalty * 0.7f);
-                    if (channel == 0) {
-                        lpfStateL = (cleanSig * shadowCutoff) + (lpfStateL * (1.0f - shadowCutoff));
-                        cleanSig = lpfStateL;
-                    } else {
-                        lpfStateR = (cleanSig * shadowCutoff) + (lpfStateR * (1.0f - shadowCutoff));
-                        cleanSig = lpfStateR;
-                    }
+                    lpfState[channel] = (cleanSig * shadowCutoff) + (lpfState[channel] * (1.0f - shadowCutoff));
+                    cleanSig = lpfState[channel];
 
                     int itdDelaySamples = (int)((penalty / juce::MathConstants<float>::halfPi) * maxItdSamples);
                     auto* itdData = itdBuffer.getWritePointer(channel);
                     itdData[itdWritePosition] = cleanSig;
+                    
                     int readPos = itdWritePosition - itdDelaySamples;
                     while (readPos < 0) readPos += itdBufferSize;
                     cleanSig = itdData[readPos];
                 }
             }
 
-            // 2. MIX DRY AND WET SIGNALS
             cleanSig = (drySig * (1.0f - dryWet)) + (cleanSig * dryWet);
-            
-            // 3. APPLY OUTPUT GAIN
             cleanSig *= outGainAmt;
 
-            // 4. TRACK METER PEAKS
             if (channel == 0) peakL = juce::jmax(peakL, std::abs(cleanSig));
             if (channel == 1) peakR = juce::jmax(peakR, std::abs(cleanSig));
 
-            // 5. WRITE TO BUFFER
             buffer.getWritePointer(channel)[sample] = cleanSig;
         }
         

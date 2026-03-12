@@ -25,11 +25,21 @@ public:
         }
     }
     
-    void setSpriteData(bool isGrid, const std::vector<AnimationDef>& anims, const std::vector<juce::Image>& imgs) {
+void setSpriteData(bool isGrid, const std::vector<AnimationDef>& anims, const std::vector<juce::Image>& imgs) {
+        // CRASH FIX 1: Reset frame state FIRST before any data swaps.
+        // This closes the race window where paint() runs with old row indices
+        // against a newly loaded (smaller) sprite sheet.
+        currentFrame = 0;
+        currentRow   = 0;
+        totalFrames  = (!anims.empty()) ? anims[0].frameCount : 1;
+        heldRow      = 0;
+        heldFrames   = totalFrames;
+
+        // Now it is safe to swap the actual data
         isGridSprite = isGrid;
         currentAnims = anims;
         spriteSheets = imgs;
-        juce::MessageManager::callAsync([this]() { repaint(); });
+        repaint();
     }
     
     void updateParams(int row, int frames, int hRow, int hFrames, bool mir) {
@@ -68,9 +78,11 @@ public:
         return offset;
     }
 
-    void paint(juce::Graphics& g) override {
+ void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colours::transparentBlack);
-        if (spriteSheets.empty()) return;
+        
+        // CRASH FIX 2: Guard every index before touching any image data.
+        if (spriteSheets.empty() || currentAnims.empty()) return;
 
         // 2. THE NEW ANCHOR MATH
         float winCenterX = getWidth() / 2.0f;   // 480
@@ -83,7 +95,10 @@ public:
         float offsetX = winCenterX - 160.0f; 
         float offsetY = winCenterY - 380.0f;
 
+        // CRASH FIX 2 (Continued): Clamp local drawing variable so it NEVER asks for a row that doesn't exist.
         int activeRow = isMouseOverOrDragging ? heldRow : currentRow;
+        activeRow = juce::jlimit(0, juce::jmax(0, (int)currentAnims.size() - 1), activeRow);
+
         int activeFrames = isMouseOverOrDragging ? heldFrames : totalFrames; 
         if (activeFrames <= 0) activeFrames = 1; 
 
@@ -115,8 +130,16 @@ public:
         float destX = offsetX + 160.0f - (destW * 0.5f);
         float destY = offsetY + 380.0f - destH;
 
-        if (sheetIndex < (int)spriteSheets.size() && spriteSheets[sheetIndex].isValid()) {
+        // CRASH FIX 3: Clamp sheetIndex so a stale globalFrame can never reach a deleted sheet.
+        sheetIndex = juce::jlimit(0, juce::jmax(0, (int)spriteSheets.size() - 1), sheetIndex);
+
+        if (spriteSheets[sheetIndex].isValid()) {
             auto& currentImg = spriteSheets[sheetIndex];
+            
+            // --- THE SPAM-CLICK SAFETY LOCK ---
+            if (sx < 0 || sx + 220 > currentImg.getWidth()) sx = 0;
+            if (sy < 0 || sy + 256 > currentImg.getHeight()) sy = 0;
+
             juce::Image sourceToDraw = currentImg; 
             int drawSourceX = sx;
             int drawSourceY = sy;
@@ -140,7 +163,6 @@ public:
                     for (int x = 0; x < 220; ++x) {
                         juce::Colour c = data.getPixelColour(x, y);
                         
-                        // THE CPU SAVER: Only run the heavy math if the pixel is actually visible!
                         if (c.getAlpha() > 10) {
                             data.setPixelColour(x, y, juce::Colour::fromHSV(
                                 std::fmod(c.getHue() + hueShift, 1.0f),
@@ -162,7 +184,11 @@ public:
 
             for (int y = 0; y < 256; y += 4) {
                 for (int x = 0; x < 220; x += 4) {
-                    juce::Colour c = scanData.getPixelColour(sx + x, sy + y);
+                    
+                    int safeX = juce::jlimit(0, sourceToDraw.getWidth() - 1, drawSourceX + x);
+                    int safeY = juce::jlimit(0, sourceToDraw.getHeight() - 1, drawSourceY + y);
+
+                    juce::Colour c = scanData.getPixelColour(safeX, safeY);
                     juce::Colour oldC = oldData.getPixelColour(x, y);
 
                     if (c.getAlpha() > 50) {
@@ -225,21 +251,6 @@ public:
                 g.drawImage(reflectionBuffer, destX, offsetY + 380.0f, destW, destH, 0, 0, 220, 256);
             }
         }
-    }
-    
-    // 3. PERFECT CLICK-THROUGH HIT TESTING
-    bool hitTest(int x, int y) override {
-        float dx = (float)x - (getWidth() / 2.0f);
-        float dy = (float)y - (getHeight() / 2.0f); 
-        
-        float hitWidth = 140.0f * currentScale;
-        float hitHeightUp = 260.0f * currentScale;
-        float hitHeightDown = 160.0f * currentScale;
-
-        if (std::abs(dx) > hitWidth) return false;
-        if (dy < -hitHeightUp || dy > hitHeightDown) return false;
-        
-        return true;
     }
 
     void mouseDown (const juce::MouseEvent& e) override {

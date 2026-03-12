@@ -57,8 +57,13 @@ private:
     // --- HRTF BINAURAL MEMORY ---
     juce::AudioBuffer<float> itdBuffer;
     int itdWritePosition = 0;
-    float lpfStateL = 0.0f;
-    float lpfStateR = 0.0f;
+
+    // --- MULTI-CHANNEL DSP VECTORS ---
+    std::vector<float> lpfState;
+    std::vector<float> svfLp;
+    std::vector<float> svfHp;
+    std::vector<float> svfBp;
+
 
     float smoothMotion = 0.0f;
     float smoothHue = 0.0f;
